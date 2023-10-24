@@ -7,6 +7,8 @@ want to use the box phones are not allowed, so this was the solution
 to allow a minimal control over the box without a phone needed or having
 to make your own hardware.
 
+![pulsemote](https://github.com/erotronik/pulsemote/assets/89390295/466b2ae5-c6d8-4237-ad80-009858b15b56)
+
 ## Notes
 
 * The current code is for Arduino IDE and a M5Stack Core controller (one
