@@ -25,6 +25,13 @@ to the right box!
 you can turn it on and off or set it to a random on/off mode. More in the
 future.
 
+## Instructions for use
+
+* After turning on the box it will scan for a DG-Labs device that is turned on and not connected to anything else
+* Use the left button to change what you want to update (either the level of output A, level of output B, or the mode), it will be highlighted with a different colour
+* Use the other buttons to alter what is highlighted, either the levels of A or B (in percentage) or the mode (between 'off', 'on', or a mode which turns on and off at a random interval)
+* For safety when holding the + button it will repeat but only up to 10% then you need to push and hold again (or rapid tap).  The maximum output is capped at 70% but that's a level in the code that can be changed.
+
 ## Requirements
 
 * A DG-Labs 2.0 box
