@@ -1,3 +1,5 @@
+// Save power by setting the CPU Frequency lower, 160MHz for example
+
 #include <M5Stack.h>
 
 #ifdef ESP32
@@ -67,7 +69,7 @@ void update_display_if_needed() {
     lcd.setCursor(0, 0);
     lcd.setFont(&fonts::Font2);
     lcd.setTextColor(0xFFFFFFU);
-    lcd.printf("github.com/erotronik/pulsemote\n\n");
+    lcd.printf("github.com/erotronik/\npulsemote\n\n");
     lcd.setTextColor(0xFFccbbU);
     lcd.printf("Bluetooth remote\nfor DG-LAB 2.0\n\n");
     lcd.setTextColor(0xFFFFFFU);
@@ -185,16 +187,37 @@ byte get_button() {
       return button;
     }
   }
-  if (button == 3 || button == 1) {
-    if (millis() - repeatbutton > 300) {
-      if (rcount < 9) {
-        rcount++;
-        repeatbutton = millis();
-        return button;
-      }
+  // If you hold a button more than XmS then it'll repeat every YmS, but only for 10 times, so you can't end up with your finger stuck on +
+
+  unsigned short startrepeatpress;
+  unsigned short maxrepeats;
+  unsigned short continuerepeatpress;
+
+  if (button ==3) {  // +
+    startrepeatpress = 400;
+    maxrepeats = 10;
+    continuerepeatpress = 200;    
+  } else if (button ==2) {  // -
+    startrepeatpress = 400;
+    maxrepeats = 1000;
+    continuerepeatpress = 100;    
+    if (rcount > 10) { // accelerate down
+      continuerepeatpress = 20;
     }
-  } else {
-    if (millis() - repeatbutton > 150) {
+  } else if (button ==1) {  // choose
+    startrepeatpress = 400;
+    maxrepeats = 10;
+    continuerepeatpress = 400;    
+  }
+ 
+  if (rcount == 0 && millis() - repeatbutton > startrepeatpress) {
+      rcount++;
+      repeatbutton = millis();
+      return button;
+  }
+  if (rcount !=0 && millis() - repeatbutton > continuerepeatpress) {
+    if (rcount < maxrepeats-1) {
+      rcount++;
       repeatbutton = millis();
       return button;
     }
