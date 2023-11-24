@@ -1,6 +1,16 @@
 // Save power by setting the CPU Frequency lower, 160MHz for example
 
+#ifdef ARDUINO_M5STACK_CORE2
+#define CORE2
+#endif
+
+#ifdef CORE2
+#include <M5Core2.h>
+#define LGFX_M5STACK_CORE2
+#else
 #include <M5Stack.h>
+#define LGFX_M5STACK
+#endif
 
 #ifdef ESP32
 #include "NimBLEDevice.h"
@@ -9,7 +19,6 @@
 #include <bluefruit.h>
 #endif
 
-#define LGFX_M5STACK
 #include <LovyanGFX.hpp>
 #include <LGFX_AUTODETECT.hpp>
 
@@ -171,14 +180,41 @@ byte button, oldbutton = 0;
 unsigned long repeatbutton = 0;
 unsigned short rcount = 0;
 
+// A = 1, B = 2, C = 3
+#ifdef CORE2
+bool get_individual_button_state(byte button) {
+  switch ( button ) {
+    case 1:
+      return M5.BtnA.isPressed();
+    case 2:
+      return M5.BtnB.isPressed();
+    case 3:
+      return M5.BtnC.isPressed();
+    default:
+      return false;
+  }
+}
+#else
+bool get_individual_button_state(byte button) {
+  auto pin = BUTTON_A_PIN;
+  if ( button == 2 )
+    pin = BUTTON_B_PIN;
+  else if ( button == 3 )
+    pin = BUTTON_C_PIN;
+
+  return digitalRead(pin) == LOW;
+}
+#endif
+
 byte get_button() {
   button = 0;
-  if (digitalRead(BUTTON_A_PIN) == LOW)
+  if (get_individual_button_state(1))
     button = 1;
-  else if (digitalRead(BUTTON_B_PIN) == LOW)
+  else if (get_individual_button_state(2))
     button = 2;
-  else if (digitalRead(BUTTON_C_PIN) == LOW)
+  else if (get_individual_button_state(3))
     button = 3;
+
   if (button != oldbutton) {
     oldbutton = button;
     if (button != 0) {
@@ -304,7 +340,7 @@ void setup() {
   delay(100);
   comms_init(0);
 
-  M5.Speaker.begin();
+  // M5.Speaker.begin(); Speaker unused, does not work like this on Core2
 
   xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);
 #if defined(ESP32)
