@@ -1,21 +1,7 @@
 // Save power by setting the CPU Frequency lower, 160MHz for example
 #include <Arduino.h>
 
-#ifdef ARDUINO_M5STACK_CORE2
-#define CORE2
-#endif
-
-#ifdef CORE2
-#include <M5Core2.h>
-#define LGFX_M5STACK_CORE2
-#else
-#include <M5Stack.h>
-#define LGFX_M5STACK
-#endif
-
-#include <LovyanGFX.hpp>
-#include <LGFX_AUTODETECT.hpp>
-
+#include <M5Unified.h>
 #include "coyote.h"
 
 // pre-declare functions from other files. This is not nice.
@@ -23,7 +9,7 @@ extern void comms_init(short myid);
 extern void comms_uart_colorpicker();
 extern void scan_loop();
 
-static LGFX lcd;
+static M5GFX lcd;
 //static LGFX_Sprite sprite(&lcd);
 short debug_mode = 0;
 
@@ -191,7 +177,6 @@ unsigned long repeatbutton = 0;
 unsigned short rcount = 0;
 
 // A = 1, B = 2, C = 3
-#ifdef CORE2
 bool get_individual_button_state(byte button) {
   switch ( button ) {
     case 1:
@@ -204,17 +189,6 @@ bool get_individual_button_state(byte button) {
       return false;
   }
 }
-#else
-bool get_individual_button_state(byte button) {
-  auto pin = BUTTON_A_PIN;
-  if ( button == 2 )
-    pin = BUTTON_B_PIN;
-  else if ( button == 3 )
-    pin = BUTTON_C_PIN;
-
-  return digitalRead(pin) == LOW;
-}
-#endif
 
 byte get_button() {
   button = 0;
@@ -359,8 +333,8 @@ void TaskScan(void *pvParameters) {
 #endif
 
 void setup() {
-  M5.begin(true, false);
-  Serial.begin(115200);
+  auto cfg = M5.config();
+  M5.begin(cfg);
 
   lcd.init();
   lcd.setRotation(1);

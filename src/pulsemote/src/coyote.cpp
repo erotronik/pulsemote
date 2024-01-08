@@ -427,7 +427,7 @@ bool connect_to_coyote(void* temp_coyote_device) {
 
   coyote_connected = true;
 
-  coyote_batterylevel = batteryLevelCharacteristic->readUInt8();
+  coyote_batterylevel = batteryLevelCharacteristic->readValue<uint8_t>();
   Serial.printf("Battery level: %u\n", coyote_batterylevel);
 
   auto configData = configCharacteristic->readValue();
