@@ -1,5 +1,4 @@
 // Save power by setting the CPU Frequency lower, 160MHz for example
-
 #include <Arduino.h>
 
 #ifdef ARDUINO_M5STACK_CORE2
@@ -234,8 +233,8 @@ byte get_button() {
       return button;
     }
   }
+  
   // If you hold a button more than XmS then it'll repeat every YmS, but only for 10 times, so you can't end up with your finger stuck on +
-
   unsigned short startrepeatpress;
   unsigned short maxrepeats;
   unsigned short continuerepeatpress;
