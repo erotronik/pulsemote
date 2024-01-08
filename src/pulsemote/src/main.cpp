@@ -1,5 +1,7 @@
 // Save power by setting the CPU Frequency lower, 160MHz for example
 
+#include <Arduino.h>
+
 #ifdef ARDUINO_M5STACK_CORE2
 #define CORE2
 #endif
@@ -12,27 +14,27 @@
 #define LGFX_M5STACK
 #endif
 
-#ifdef ESP32
-#include "NimBLEDevice.h"
-#endif /* ESP32 */
-#ifndef ESP32
-#include <bluefruit.h>
-#endif
-
 #include <LovyanGFX.hpp>
 #include <LGFX_AUTODETECT.hpp>
+
+#include "coyote.h"
+
+// pre-declare functions from other files. This is not nice.
+extern void comms_init(short myid);
+extern void comms_uart_colorpicker();
+extern void scan_loop();
 
 static LGFX lcd;
 //static LGFX_Sprite sprite(&lcd);
 short debug_mode = 0;
 
-// this belongs into comms.ino. But it has to be in a separate file because - Arduino.
-enum scan_callback_result { None, Coyote };
-
 boolean need_display_update = false;
 boolean need_display_timer_update = false;
 
-void update_display() {
+void update_display(bool clear_display) {
+  if ( clear_display )
+      lcd.clearDisplay();
+
   need_display_update = true;
   need_display_timer_update = true;
 }
@@ -44,6 +46,15 @@ char *modes[] = { "Off", "Breath", "Random", "" };
 short mode_now = 0;
 typedef enum { STATE_MODE, STATE_B, STATE_A, STATE_LAST } states;
 short select_state = STATE_MODE;
+
+unsigned long random_timer = 0;
+unsigned long random_display_refresh = 0;
+
+short random_time_left() {
+  short a = ((random_timer - millis()) / 1000);
+  if (a > 500 || a < 0) return 0;
+  return a;
+}
 
 void update_display_timer() {
   unsigned int bc;
@@ -261,15 +272,6 @@ byte get_button() {
   return 0;
 }
 
-unsigned long random_timer = 0;
-unsigned long random_display_refresh = 0;
-
-short random_time_left() {
-  short a = ((random_timer - millis()) / 1000);
-  if (a > 500 || a < 0) return 0;
-  return a;
-}
-
 void handle_random_mode() {
   if (mode_now != 2) return;
   if (millis() > random_timer) {
@@ -294,7 +296,7 @@ void handle_buttons() {
     if (select_state >= STATE_LAST) {
       select_state = STATE_MODE;
     }
-    update_display();
+    update_display(false);
     return;
   }
   if (select_state == STATE_MODE) {
@@ -325,28 +327,8 @@ void handle_buttons() {
   }
 }
 
-
-void setup() {
-  M5.begin(true, false);
-  Serial.begin(115200);
-
-  lcd.init();
-  lcd.setRotation(1);
-  lcd.setBrightness(128);
-  lcd.setColorDepth(16);
-  lcd.clearDisplay();
-  lcd.setTextSize(2);
-
-  delay(100);
-  comms_init(0);
-
-  // M5.Speaker.begin(); Speaker unused, does not work like this on Core2
-
-  xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);
-#if defined(ESP32)
-  xTaskCreate(TaskScan, "Scan", 10000, nullptr, 2, nullptr);
-#endif
-  need_display_update = true;
+// Leave empty - we are using FreeRTOS tasks instead of the Arduino main loop
+void loop() {
 }
 
 void main_loop() {
@@ -358,10 +340,6 @@ void main_loop() {
   comms_uart_colorpicker();
   update_display_if_needed();
   delay(10);
-}
-
-// Leave empty - we are using FreeRTOS tasks instead of the Arduino main loop
-void loop() {
 }
 
 void TaskMain(void *pvParameters) {
@@ -380,3 +358,24 @@ void TaskScan(void *pvParameters) {
   }
 }
 #endif
+
+void setup() {
+  M5.begin(true, false);
+  Serial.begin(115200);
+
+  lcd.init();
+  lcd.setRotation(1);
+  lcd.setBrightness(128);
+  lcd.setColorDepth(16);
+  lcd.clearDisplay();
+  lcd.setTextSize(2);
+
+  delay(100);
+  comms_init(0);
+
+  xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);
+#if defined(ESP32)
+  xTaskCreate(TaskScan, "Scan", 10000, nullptr, 2, nullptr);
+#endif
+  need_display_update = true;
+}

@@ -1,4 +1,23 @@
+#include "Arduino.h"
 #include "coyote.h"
+
+#ifdef ESP32
+#include "NimBLEDevice.h"
+#endif /* ESP32 */
+#ifndef ESP32
+#include <bluefruit.h>
+#endif
+
+enum scan_callback_result { None, Coyote };
+extern short debug_mode;
+
+enum scan_callback_result check_scan_data(const char* ble_manufacturer_specific_data, int length, int rssi) {
+  if (length > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
+    Serial.printf("Found DG-LAB\n");
+    return Coyote;
+  }
+  return None;
+}
 
 #ifndef ESP32
 BLEUart bleuart;
@@ -111,13 +130,4 @@ void comms_uart_colorpicker(void) {
     Serial.printf("ok\n");
   }
 }
-
-enum scan_callback_result check_scan_data(const char* ble_manufacturer_specific_data, int length, int rssi) {
-  if (length > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
-    Serial.printf("Found DG-LAB\n");
-    return Coyote;
-  }
-  return None;
-}
-
 
