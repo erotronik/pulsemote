@@ -324,13 +324,11 @@ void TaskMain(void *pvParameters) {
 // On the ESP32, we scan in a separate task - scanning is a blocking
 // operation. All the communication with the Coyote also happens
 // in this task.
-#if defined(ESP32)
 void TaskScan(void *pvParameters) {
   while (true) {
     scan_loop();
   }
 }
-#endif
 
 void setup() {
   auto cfg = M5.config();
@@ -347,8 +345,6 @@ void setup() {
   comms_init(0);
 
   xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);
-#if defined(ESP32)
   xTaskCreate(TaskScan, "Scan", 10000, nullptr, 2, nullptr);
-#endif
   need_display_update = true;
 }

@@ -1,7 +1,4 @@
 // DG-Lab estim box support.
-// This file first has the methods that are implementation independent, followed by
-// the Itsy Bitsy implementation, and then the ESP32 methods.
-
 // References:
 // https://rezreal.github.io/coyote/web-bluetooth-example.html
 // https://github.com/OpenDGLab/OpenDGLab-Connect/blob/master/src/services/DGLab.js
@@ -10,12 +7,7 @@
 #include "coyote.h"
 #include "coyote-modes.h"
 
-#ifdef ESP32
 #include "NimBLEDevice.h"
-#endif /* ESP32 */
-#ifndef ESP32
-#include <bluefruit.h>
-#endif
 
 int coyote_ax = 0; int coyote_ay = 0; int coyote_az = 0;
 int coyote_bx = 0; int coyote_by = 0; int coyote_bz = 0;
@@ -50,18 +42,6 @@ boolean coyote_connected = false;
 
 TimerHandle_t coyoteTimer = nullptr;
 
-#ifndef ESP32
-
-BLEClientService coyoteService(COYOTE_SERVICE_UUID);
-BLEClientCharacteristic configCharacteristic(CONFIG_CHAR_UUID);
-BLEClientCharacteristic powerCharacteristic(POWER_CHAR_UUID);
-BLEClientCharacteristic patternACharacteristic(A_CHAR_UUID);
-BLEClientCharacteristic patternBCharacteristic(B_CHAR_UUID);
-BLEClientService batteryService(BATTERY_UUID);
-BLEClientCharacteristic batteryLevelCharacteristic(BATTERY_CHAR_UUID);
-
-#else
-
 NimBLEUUID COYOTE_SERVICE_BLEUUID(COYOTE_SERVICE_UUID, 16, false);
 NimBLEUUID CONFIG_CHAR_BLEUUID(CONFIG_CHAR_UUID, 16, false);
 NimBLEUUID POWER_CHAR_BLEUUID(POWER_CHAR_UUID, 16, false);
@@ -77,7 +57,6 @@ NimBLERemoteCharacteristic* patternACharacteristic;
 NimBLERemoteCharacteristic* patternBCharacteristic;
 NimBLERemoteService* batteryService;
 NimBLERemoteCharacteristic* batteryLevelCharacteristic;
-#endif
 
 boolean coyote_get_isconnected() {
   return coyote_connected;
@@ -217,108 +196,6 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
 #endif
   }
 }
-
-#ifndef ESP32
-
-void coyote_setup(void) {
-#if 0
-  uint8_t x[4];
-  x[0] = 33; x[1] = 1; x[2] = 10;
-  coyote_parse_pattern(x, &coyote_ax, &coyote_ay, &coyote_az);
-  coyote_encode_pattern(x, coyote_ax, coyote_ay, coyote_az);
-  x[0] = 33; x[1] = 1; x[2] = 8;
-  coyote_parse_pattern(x, &coyote_ax, &coyote_ay, &coyote_az);
-  x[0] = 33; x[1] = 1; x[2] = 0;
-  coyote_parse_pattern(x, &coyote_ax, &coyote_ay, &coyote_az);
-#endif
-
-  batteryService.begin();
-  batteryLevelCharacteristic.begin();
-  coyoteService.begin();
-  configCharacteristic.begin();
-  powerCharacteristic.begin();
-  patternACharacteristic.begin();
-  patternBCharacteristic.begin();
-}
-
-void central_disconnect_callback(uint16_t conn_handle, uint8_t reason) {
-  Serial.println("coyote disconnected");
-  coyote_connected = false;
-  xTimerStop(coyoteTimer, 0);
-}
-
-void coyote_batterylevel_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t len) {
-  coyote_batterylevel = data[0];
-  Serial.printf("coyote batterycb: %d\n", coyote_batterylevel);
-}
-
-void coyote_power_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t len) {
-  coyote_parse_power(data);
-}
-
-void connectionfailed(String x, uint16_t conn_handle) {
-  Serial.println(x);
-  Bluefruit.disconnect(conn_handle);
-  return;
-}
-
-void central_connect_callback(uint16_t conn_handle) {
-  uint8_t buf[20];
-
-  if (!batteryService.discover(conn_handle)) return connectionfailed("e1", conn_handle);
-  if (!batteryLevelCharacteristic.discover()) return connectionfailed("e2", conn_handle);
-
-  while (!batteryLevelCharacteristic.read(buf, 1)) {};
-  coyote_batterylevel = buf[0];
-  Serial.printf("coyote battery %d\n", coyote_batterylevel);
-  batteryLevelCharacteristic.setNotifyCallback(coyote_batterylevel_callback);
-  batteryLevelCharacteristic.enableNotify();
-
-  if (!coyoteService.discover(conn_handle)) return connectionfailed("e3", conn_handle);
-  if (!configCharacteristic.discover()) return connectionfailed("e4", conn_handle);
-
-  while (!configCharacteristic.read(buf, 3)) {};
-  // read: 3 bytes: flipFirstAndThirdByte(skip(5) ~ uint(11).as("maxPower") ~ uint8.as("powerStep"))
-  coyote_maxPower = (buf[2] & 0xf) * 256 + buf[1];
-  coyote_powerStep = buf[0];
-  Serial.printf("coyote maxPower: %d\n", coyote_maxPower);
-  Serial.printf("coyote powerStep: %d\n", coyote_powerStep);
-
-  if (!powerCharacteristic.discover()) return connectionfailed("e5", conn_handle);
-
-  while (!powerCharacteristic.read(buf, 3)) {};
-  coyote_parse_power(buf);
-  powerCharacteristic.setNotifyCallback(coyote_power_callback);
-  powerCharacteristic.enableNotify();
-
-  if (!patternACharacteristic.discover()) return connectionfailed("e6", conn_handle);
-  if (!patternBCharacteristic.discover()) return connectionfailed("e7", conn_handle);
-
-  while (!patternACharacteristic.read(buf, 3)) {};
-  coyote_parse_pattern(buf, &coyote_ax, &coyote_ay, &coyote_az);
-  while (!patternBCharacteristic.read(buf, 3)) {};
-  coyote_parse_pattern(buf, &coyote_bx, &coyote_by, &coyote_bz);
-
-  coyote_encode_power(buf, start_powerA, start_powerB);
-  while (powerCharacteristic.write(buf, 3)) {};
-  wavemodea = 1;
-  wavemodeb = 1;
-
-  coyote_connected = true;
-
-  if (!coyoteTimer)
-    coyoteTimer = xTimerCreate(nullptr, pdMS_TO_TICKS(100), true, nullptr, coyote_timer_callback);
-  xTimerStart(coyoteTimer, 0);
-
-  Serial.println("coyote connected!");
-  comms_stop_scan();
-  update_display(false);
-}
-
-#endif /* not ESP32 */
-
-#ifdef ESP32
-
 
 NimBLEClient* bleClient = nullptr;
 
@@ -467,5 +344,3 @@ bool connect_to_coyote(void* temp_coyote_device) {
   update_display(true);
   return true;
 }
-
-#endif /* ESP32 */

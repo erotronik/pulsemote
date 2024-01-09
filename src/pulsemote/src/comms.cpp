@@ -1,12 +1,7 @@
 #include "Arduino.h"
 #include "coyote.h"
 
-#ifdef ESP32
-#include "NimBLEDevice.h"
-#endif /* ESP32 */
-#ifndef ESP32
-#include <bluefruit.h>
-#endif
+#include <NimBLEDevice.h>
 
 enum scan_callback_result { None, Coyote };
 extern short debug_mode;
@@ -18,41 +13,6 @@ enum scan_callback_result check_scan_data(const char* ble_manufacturer_specific_
   }
   return None;
 }
-
-#ifndef ESP32
-BLEUart bleuart;
-
-void comms_init(short myid) {
-  Bluefruit.setTxPower(4);
-  Bluefruit.setName("x");
-  Bluefruit.Periph.setConnectCallback(comms_connect_callback);
-  bleuart.begin();
-
-  Bluefruit.Scanner.setRxCallback(scan_callback);
-  Bluefruit.Scanner.restartOnDisconnect(true);
-  Bluefruit.Scanner.filterRssi(-128);
-  Bluefruit.Scanner.setInterval(400, 200);   // in units of 0.625 ms
-  Bluefruit.Scanner.useActiveScan(false); // only need an rssi
-  Bluefruit.Scanner.start(0); // 0 = Don't stop scanning after n seconds
-
-  coyote_setup();
-}
-
-void scan_callback(ble_gap_evt_adv_report_t *report)
-{
-  uint8_t buffer[32];
-  uint8_t len = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, buffer, sizeof(buffer));
-
-  auto res = check_scan_data((char*)buffer, len, report->rssi);
-
-  if ( res == Coyote )
-    Bluefruit.Central.connect(report);
-    Bluefruit.Scanner.resume();
-}
-
-#else /* ESP32 */
-
-#include <NimBLEDevice.h>
 
 NimBLEServer *pServer = NULL;
 NimBLECharacteristic * pTxCharacteristic;
@@ -105,7 +65,6 @@ void scan_loop() {
     delay(1000);
   }
 }
-#endif
 
 void comms_uart_colorpicker(void) {
   if (Serial.available()<1)
