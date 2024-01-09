@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include <M5Unified.h>
+#include <memory>
 #include "coyote.h"
 
 // pre-declare functions from other files. This is not nice.
@@ -12,6 +13,7 @@ extern void scan_loop();
 static M5GFX lcd;
 //static LGFX_Sprite sprite(&lcd);
 short debug_mode = 0;
+std::unique_ptr<Coyote> coyote_controller;
 
 boolean need_display_update = false;
 boolean need_display_timer_update = false;
@@ -69,7 +71,7 @@ void update_display_if_needed() {
   need_display_update = false;
   need_display_timer_update = false;
 
-  if (!coyote_get_isconnected()) {
+  if (!coyote_controller->get_isconnected()) {
     lcd.clearDisplay();
     lcd.setCursor(0, 0);
     lcd.setFont(&fonts::Font2);
@@ -95,12 +97,12 @@ void update_display_if_needed() {
   lcd.printf(" A ");
 
   lcd.setCursor(28 - 12, 75 - 30);
-  if (coyote_get_isconnected()) {
+  if (coyote_controller->get_isconnected()) {
     lcd.setFont(&fonts::Font4);
-    lcd.printf("%02d", coyote_get_powera_pc());
+    lcd.printf("%02d", coyote_controller->get_powera_pc());
     lcd.setFont(NULL);
     lcd.setCursor(28 - 14, 105);
-    lcd.printf("%s", modes[coyote_get_modea()]);
+    lcd.printf("%s", modes[coyote_controller->get_modea()]);
   }
   //else
   // lcd.printf("   ");
@@ -115,12 +117,12 @@ void update_display_if_needed() {
   lcd.printf(" B ");
 
   lcd.setCursor(320 - 90 + 28 - 12, 75 - 30);
-  if (coyote_get_isconnected()) {
+  if (coyote_controller->get_isconnected()) {
     lcd.setFont(&fonts::Font4);
-    lcd.printf("%02d", coyote_get_powerb_pc());
+    lcd.printf("%02d", coyote_controller->get_powerb_pc());
     lcd.setFont(NULL);
     lcd.setCursor(320 - 90 + 28 - 14, 105);
-    lcd.printf("%s", modes[coyote_get_modeb()]);
+    lcd.printf("%s", modes[coyote_controller->get_modeb()]);
   }
   //else
   //  lcd.printf("   ") ;
@@ -136,10 +138,10 @@ void update_display_if_needed() {
   lcd.printf(" Mode ");
   update_display_timer();
 
-  if (coyote_get_isconnected()) {
+  if (coyote_controller->get_isconnected()) {
     if (mode_now == 0) {
       lcd.setCursor(100 + 30, 70);
-      lcd.printf("%s", modes[coyote_get_modea()]);
+      lcd.printf("%s", modes[coyote_controller->get_modea()]);
     }
     if (mode_now == 1) {
       lcd.setCursor(100 + 30, 70);
@@ -149,15 +151,15 @@ void update_display_if_needed() {
 
   lcd.setTextColor(0xFFFFFFU, 0);
 
-  if (coyote_get_isconnected()) {
+  if (coyote_controller->get_isconnected()) {
     lcd.setCursor(0, 170);
-    lcd.printf("  Status: Connected %d%%  ", coyote_get_batterylevel());
+    lcd.printf("  Status: Connected %d%%  ", coyote_controller->get_batterylevel());
   } else {
     lcd.setCursor(0, 170);
     lcd.printf("  Status: Scanning           ");
   }
 
-  if (coyote_get_isconnected()) {
+  if (coyote_controller->get_isconnected()) {
     lcd.setTextColor(0xFFFFFFU, blocksel);
     lcd.setCursor(30, 225);
     lcd.printf("Choose");
@@ -249,12 +251,12 @@ void handle_random_mode() {
   if (mode_now != 2) return;
   if (millis() > random_timer) {
     Serial.println("Random time to switch");
-    if (coyote_get_modea() == 0) {
+    if (coyote_controller->get_modea() == 0) {
       random_timer = millis() + random(10000, 30000);  // On time is 10-30 seconds
     } else {
       random_timer = millis() + random(30000, 50000);  // Off time is 30-50 seconds
     }
-    coyote_put_toggle();
+    coyote_controller->put_toggle();
   }
   if (millis() > random_display_refresh + 500) {  // update the display every .5 seconds with countdown
     random_display_refresh = millis();
@@ -280,22 +282,22 @@ void handle_buttons() {
       }
       Serial.printf("Set mode %d\n", mode_now);
       if (mode_now == 1) {
-        coyote_put_setmode(1, 1);
+        coyote_controller->put_setmode(1, 1);
       } else {
-        coyote_put_setmode(0, 0);
+        coyote_controller->put_setmode(0, 0);
       }
     }
   } else if (select_state == STATE_A) {
     if (b == 2) {
-      coyote_put_powerup(-1, 0);
+      coyote_controller->put_powerup(-1, 0);
     } else if (b == 3) {
-      coyote_put_powerup(1, 0);
+      coyote_controller->put_powerup(1, 0);
     }
   } else if (select_state == STATE_B) {
     if (b == 2) {
-      coyote_put_powerup(0, -1);
+      coyote_controller->put_powerup(0, -1);
     } else if (b == 3) {
-      coyote_put_powerup(0, 1);
+      coyote_controller->put_powerup(0, 1);
     }
   }
 }
@@ -342,6 +344,7 @@ void setup() {
   lcd.setTextSize(2);
 
   delay(100);
+  coyote_controller = std::unique_ptr<Coyote>(new Coyote());
   comms_init(0);
 
   xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);

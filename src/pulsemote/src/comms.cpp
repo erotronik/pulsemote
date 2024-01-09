@@ -2,31 +2,33 @@
 #include "coyote.h"
 
 #include <NimBLEDevice.h>
+#include <memory>
 
-enum scan_callback_result { None, Coyote };
+enum scan_callback_result { SCAN_None, SCAN_Coyote };
 extern short debug_mode;
 
 enum scan_callback_result check_scan_data(const char* ble_manufacturer_specific_data, int length, int rssi) {
   if (length > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
     Serial.printf("Found DG-LAB\n");
-    return Coyote;
+    return SCAN_Coyote;
   }
-  return None;
+  return SCAN_None;
 }
 
-NimBLEServer *pServer = NULL;
+NimBLEServer *pServer = nullptr;
 NimBLECharacteristic * pTxCharacteristic;
 bool device_connected = false;
 NimBLEScan* pBLEScan;
 int scanTime = 5; //In seconds
 
 NimBLEAdvertisedDevice* coyote_device = nullptr;
+extern std::unique_ptr<Coyote> coyote_controller;
 
 class BubblerAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
       //Serial.printf("Advertised Device: %s \n", advertisedDevice->toString().c_str());
       auto res = check_scan_data(advertisedDevice->getManufacturerData().c_str(), advertisedDevice->getManufacturerData().length(), advertisedDevice->getRSSI());
-      if ( res == Coyote ) {
+      if ( res == SCAN_Coyote ) {
         // can't connect while scanning is going on - it locks up everything.
         coyote_device = new NimBLEAdvertisedDevice(*advertisedDevice);
         NimBLEDevice::getScan()->stop();
@@ -50,13 +52,13 @@ void comms_stop_scan() {
 }
 
 void scan_loop() {
-  if ( !coyote_get_isconnected()) {
+  if ( !coyote_controller || !coyote_controller->get_isconnected() ) {
     NimBLEScanResults foundDevices = pBLEScan->start(scanTime, false);
 
     pBLEScan->clearResults();   // delete results fromBLEScan buffer to release memory
 
     if ( coyote_device ) {
-      connect_to_coyote(coyote_device);
+      coyote_controller->connect_to_device(coyote_device);
       delete coyote_device;
       coyote_device = nullptr;      
     }
@@ -78,11 +80,7 @@ void comms_uart_colorpicker(void) {
   if (command == 'R') { 
       Serial.printf("rebooting\n");
       delay(100);
-#ifndef ESP32
-      NVIC_SystemReset();
-#else
       ESP.restart();
-#endif
   } else if (command == 'D') {
     command = Serial.read();
     debug_mode = command - '0';

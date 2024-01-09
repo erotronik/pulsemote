@@ -4,13 +4,10 @@
 // https://github.com/OpenDGLab/OpenDGLab-Connect/blob/master/src/services/DGLab.js
 
 #include <Arduino.h>
+#include <functional>
+
 #include "coyote.h"
 #include "coyote-modes.h"
-
-#include "NimBLEDevice.h"
-
-int coyote_ax = 0; int coyote_ay = 0; int coyote_az = 0;
-int coyote_bx = 0; int coyote_by = 0; int coyote_bz = 0;
 
 // from main.cpp. This is all not nicely separated yet...
 extern void update_display(bool clear_display);
@@ -25,22 +22,6 @@ uint8_t B_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 
 uint8_t BATTERY_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x0a, 0x18, 0x5a, 0x95 };
 uint8_t BATTERY_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x00, 0x15, 0x5a, 0x95 };
 
-short waveclocka = 0;
-short waveclockb = 0;
-unsigned short coyote_powerA;
-unsigned short coyote_powerB;
-unsigned short coyote_powerAwanted = start_powerA;
-unsigned short coyote_powerBwanted = start_powerB;
-short wavemodea = 0;
-short wavemodeb = 0;
-short wantedmodea = 0;
-short wantedmodeb = 0;
-uint8_t coyote_powerStep = 0;
-uint8_t coyote_batterylevel = 0;
-uint16_t coyote_maxPower = 1;
-boolean coyote_connected = false;
-
-TimerHandle_t coyoteTimer = nullptr;
 
 NimBLEUUID COYOTE_SERVICE_BLEUUID(COYOTE_SERVICE_UUID, 16, false);
 NimBLEUUID CONFIG_CHAR_BLEUUID(CONFIG_CHAR_UUID, 16, false);
@@ -58,12 +39,14 @@ NimBLERemoteCharacteristic* patternBCharacteristic;
 NimBLERemoteService* batteryService;
 NimBLERemoteCharacteristic* batteryLevelCharacteristic;
 
-boolean coyote_get_isconnected() {
+std::map<TimerHandle_t, Coyote*> coyote_timer_map;
+
+boolean Coyote::get_isconnected() {
   return coyote_connected;
 }
 
 // go up or down in steps of 1%, but never above 70% of max
-void coyote_put_powerup(short a, short b) {
+void Coyote::put_powerup(short a, short b) {
   if (a > 5 || b > 5) return;  // max 5% in one go, sanity check
   int pc = coyote_maxPower / 100;
   int max = coyote_maxPower * .70;  // HARD LIMIT HERE just for sanity
@@ -79,27 +62,27 @@ void coyote_put_powerup(short a, short b) {
   }
 }
 
-int coyote_get_powera_pc() {
+int Coyote::get_powera_pc() {
   return int(coyote_powerA * 100 / coyote_maxPower);
 }
 
-int coyote_get_powerb_pc() {
+int Coyote::get_powerb_pc() {
   return int(coyote_powerB * 100 / coyote_maxPower);
 }
 
-uint8_t coyote_get_batterylevel() {
+uint8_t Coyote::get_batterylevel() {
   return coyote_batterylevel;
 }
 
-short coyote_get_modea() {
+short Coyote::get_modea() {
   return wantedmodea;
 }
 
-short coyote_get_modeb() {
+short Coyote::get_modeb() {
   return wantedmodeb;
 }
 
-void coyote_put_setmode(short a, short b) {
+void Coyote::put_setmode(short a, short b) {
   wantedmodea = a;
   wantedmodeb = b;
   Serial.printf("Set WaveMode %d %d\n", a, b);
@@ -107,11 +90,11 @@ void coyote_put_setmode(short a, short b) {
 }
 
 // needs rewriting if we add more than one mode
-void coyote_put_toggle() {
-  coyote_put_setmode(1 - wantedmodea, 1 - wantedmodeb);
+void Coyote::put_toggle() {
+  put_setmode(1 - wantedmodea, 1 - wantedmodeb);
 }
 
-void coyote_parse_power(const uint8_t* buf) {
+void Coyote::parse_power(const uint8_t* buf) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
   coyote_powerA = (buf[2] * 256 + buf[1]) >> 3;
   coyote_powerB = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
@@ -119,7 +102,7 @@ void coyote_parse_power(const uint8_t* buf) {
   update_display(false);
 }
 
-void coyote_encode_power(uint8_t* buf, int xpowerA, int xpowerB) {
+void Coyote::encode_power(uint8_t* buf, int xpowerA, int xpowerB) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
   buf[2] = (xpowerA & 0b11111100000) >> 5;
   buf[1] = (xpowerA & 0b11111) << 3 | (xpowerB & 0b11100000000) >> 8;
@@ -127,7 +110,7 @@ void coyote_encode_power(uint8_t* buf, int xpowerA, int xpowerB) {
   Serial.printf("coyote power A=%d B=%d\n", xpowerA, xpowerB);
 }
 
-void coyote_encode_pattern(uint8_t* buf, int ax, int ay, int az) {
+void Coyote::encode_pattern(uint8_t* buf, int ax, int ay, int az) {
   // flipFirstAndThirdByte(zero(4) ~ uint(5).as("az") ~ uint(10).as("ay") ~ uint(5).as("ax"))
   buf[2] = (az & 0b11111) >> 1;
   buf[1] = ((az & 0b1) * 128) | ((ay & 0b1111111000) >> 3);
@@ -135,7 +118,7 @@ void coyote_encode_pattern(uint8_t* buf, int ax, int ay, int az) {
   //Serial.printf("encode pattern %02x %02x %02x ax=%d ay=%d az=%d\n", buf[2],buf[1],buf[0],ax,ay,az);
 }
 
-void coyote_parse_pattern(const uint8_t* buf, int* ax, int* ay, int* az) {
+void Coyote::parse_pattern(const uint8_t* buf, int* ax, int* ay, int* az) {
   // flipFirstAndThirdByte(zero(4) ~ uint(5).as("az") ~ uint(10).as("ay") ~ uint(5).as("ax"))
   *az = ((buf[2] * 256 + buf[1]) & 0b0000111110000000) >> 7;
   *ay = ((buf[2] * 256 * 256 + buf[1] * 256 + buf[0]) & 0b000000000111111111100000) >> 5;
@@ -143,10 +126,18 @@ void coyote_parse_pattern(const uint8_t* buf, int* ax, int* ay, int* az) {
   //Serial.printf("parse pattern %02x %02x %02x ax=%d ay=%d az=%d\n", buf[2],buf[1],buf[0],*ax,*ay,*az);
 }
 
+void coyote_timer_callback(TimerHandle_t xTimerID) {
+  try {
+    auto instance = coyote_timer_map.at(xTimerID);
+    instance->timer_callback(xTimerID);
+  } catch ( const std::out_of_range& e ) {
+    Serial.println("Could not find timer callback instance");
+  }
+}
 
 // This is called every 100mS to provide the coyote box with what to do next
 //
-void coyote_timer_callback(TimerHandle_t xTimerID) {
+void Coyote::timer_callback(TimerHandle_t xTimerID) {
   uint8_t buf[4];
 
   if (!coyote_connected) return;
@@ -164,57 +155,57 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
   }
   // this sets the power to where we want it (also stop you changing it on the rocker switches)
   if (coyote_powerA != coyote_powerAwanted || coyote_powerB != coyote_powerBwanted) {
-    coyote_encode_power(buf, coyote_powerAwanted, coyote_powerBwanted);
-#ifdef ESP32
+    encode_power(buf, coyote_powerAwanted, coyote_powerBwanted);
     if (!powerCharacteristic->writeValue(buf, 3))
       Serial.println("Failed to write power");
-#else
-    while (!powerCharacteristic.write(buf, 3)) {};
-#endif
   }
   // Do WaveA
   if (coyote_powerA > 0 && wavemodea != 0) {
     coyote_wave_ramp(&waveclocka, &wavemodea, &coyote_ax, &coyote_ay, &coyote_az);
-    coyote_encode_pattern(buf, coyote_ax, coyote_ay, coyote_az);
-#ifdef ESP32
+    encode_pattern(buf, coyote_ax, coyote_ay, coyote_az);
     if (!patternACharacteristic->writeValue(buf, 3))
       Serial.println("Failed to write pattern A");
-#else
-    while (!patternACharacteristic.write(buf, 3)) {};
-#endif
   }
   // Do WaveB
   if (coyote_powerB > 0 && wavemodeb != 0) {
     coyote_wave_ramp(&waveclockb, &wavemodeb, &coyote_bx, &coyote_by, &coyote_bz);
-    coyote_encode_pattern(buf, coyote_bx, coyote_by, coyote_bz);
-#ifdef ESP32
+    encode_pattern(buf, coyote_bx, coyote_by, coyote_bz);
     if (!patternBCharacteristic->writeValue(buf, 3)) {
       Serial.println("Failed to write pattern B");
     }
-#else
-    while (!patternBCharacteristic.write(buf, 3)) {};
-#endif
   }
 }
 
-NimBLEClient* bleClient = nullptr;
-
-class BubblerClientCallback : public NimBLEClientCallbacks {
-  void onConnect(NimBLEClient* pclient) {
+void Coyote::connected_callback() {
     Serial.println("Client onConnect");
-  }
+}
 
-  void onDisconnect(NimBLEClient* pclient) {
+void Coyote::disconnected_callback() {
     coyote_connected = false;
     xTimerStop(coyoteTimer, 0);
     Serial.println("Client onDisconnect");
     update_display(false);
-  }
-};
-
-void coyote_setup(void) {
-  // nothing to do for the ESP.
 }
+
+NimBLEClient* bleClient = nullptr;
+
+class CoyoteNimBLEClientCallback : public NimBLEClientCallbacks {
+public:
+  CoyoteNimBLEClientCallback(Coyote* instance) {
+    coyote_instance = instance;
+  }
+
+  void onConnect(NimBLEClient* pclient) {
+    coyote_instance->connected_callback();
+  }
+
+  void onDisconnect(NimBLEClient* pclient) {
+    coyote_instance->disconnected_callback();
+  }
+
+private:
+  Coyote* coyote_instance;
+};
 
 bool getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
   Serial.printf("Getting service\n");
@@ -249,26 +240,33 @@ bool getCharacteristic(NimBLERemoteService* service, NimBLERemoteCharacteristic*
   }
 }
 
-void coyote_batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
+void Coyote::batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
   coyote_batterylevel = data[0];
   Serial.printf("coyote batterycb: %d\n", coyote_batterylevel);
 }
 
-void coyote_power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
+void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
   if (length >= 3)
-    coyote_parse_power(data);
+    parse_power(data);
   else
     Serial.println("Power callback with incorrect length");
 }
 
-bool connect_to_coyote(void* temp_coyote_device) {
-  NimBLEAdvertisedDevice* coyote_device = (NimBLEAdvertisedDevice*)temp_coyote_device;
+Coyote::Coyote() {
+}
+
+Coyote::~Coyote() {
+  if ( coyoteTimer )
+    coyote_timer_map.erase(coyoteTimer);
+}
+
+bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   if (coyote_connected)
     return false;
 
   if (!bleClient) {
     bleClient = NimBLEDevice::createClient();
-    bleClient->setClientCallbacks(new BubblerClientCallback());
+    bleClient->setClientCallbacks(new CoyoteNimBLEClientCallback(this));
   }
 
   Serial.printf("Will try to connect to Coyote at %s\n", coyote_device->getAddress().toString().c_str());
@@ -287,10 +285,10 @@ bool connect_to_coyote(void* temp_coyote_device) {
     bleClient->disconnect();
     return false;
   }
-
-  res &= getCharacteristic(batteryService, batteryLevelCharacteristic, BATTERY_CHAR_BLEUUID, coyote_batterylevel_callback);
+  
+  res &= getCharacteristic(batteryService, batteryLevelCharacteristic, BATTERY_CHAR_BLEUUID, std::bind(&Coyote::batterylevel_callback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
   res &= getCharacteristic(coyoteService, configCharacteristic, CONFIG_CHAR_BLEUUID);
-  res &= getCharacteristic(coyoteService, powerCharacteristic, POWER_CHAR_BLEUUID, coyote_power_callback);
+  res &= getCharacteristic(coyoteService, powerCharacteristic, POWER_CHAR_BLEUUID, std::bind(&Coyote::power_callback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
   res &= getCharacteristic(coyoteService, patternACharacteristic, A_CHAR_BLEUUID);
   res &= getCharacteristic(coyoteService, patternBCharacteristic, B_CHAR_BLEUUID);
 
@@ -315,26 +313,28 @@ bool connect_to_coyote(void* temp_coyote_device) {
 
   auto powerData = powerCharacteristic->readValue();
   if (powerData.size() >= 3)
-    coyote_parse_power(powerData.begin());
+    parse_power(powerData.begin());
 
   auto patternAData = patternACharacteristic->readValue();
   auto patternBData = patternBCharacteristic->readValue();
   if (patternAData.size() < 3 || patternBData.size() < 3) {
     Serial.println("No pattern data?");
   }
-  coyote_parse_pattern(patternAData.begin(), &coyote_ax, &coyote_ay, &coyote_az);
-  coyote_parse_pattern(patternBData.begin(), &coyote_bx, &coyote_by, &coyote_bz);
+  parse_pattern(patternAData.begin(), &coyote_ax, &coyote_ay, &coyote_az);
+  parse_pattern(patternBData.begin(), &coyote_bx, &coyote_by, &coyote_bz);
 
   uint8_t buf[5];
-  coyote_encode_power(buf, start_powerA, start_powerB);
+  encode_power(buf, start_powerA, start_powerB);
   if (!powerCharacteristic->writeValue(buf, 3))
     Serial.println("Failed to write powerCharacteristic");
 
   wavemodea = 1;
   wavemodeb = 1;
 
-  if (!coyoteTimer)
+  if (!coyoteTimer) {
     coyoteTimer = xTimerCreate(nullptr, pdMS_TO_TICKS(100), true, nullptr, coyote_timer_callback);
+    coyote_timer_map[coyoteTimer] = this;
+  }
   xTimerStart(coyoteTimer, 0);
 
 
