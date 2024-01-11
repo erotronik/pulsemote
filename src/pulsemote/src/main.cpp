@@ -3,7 +3,11 @@
 
 #include <M5Unified.h>
 #include <memory>
+
 #include "coyote.h"
+
+// and from comms.cpp
+extern void comms_stop_scan();
 
 // pre-declare functions from other files. This is not nice.
 extern void comms_init(short myid);
@@ -15,13 +19,12 @@ static M5GFX lcd;
 short debug_mode = 0;
 std::unique_ptr<Coyote> coyote_controller;
 
+boolean need_display_clear = false;
 boolean need_display_update = false;
 boolean need_display_timer_update = false;
 
 void update_display(bool clear_display) {
-  if ( clear_display )
-      lcd.clearDisplay();
-
+  need_display_clear = true;
   need_display_update = true;
   need_display_timer_update = true;
 }
@@ -29,7 +32,7 @@ void update_display(bool clear_display) {
 unsigned int blockunsel = 0x2222ffU;
 unsigned int blocksel = 0xff2222U;
 
-char *modes[] = { "Off", "Breath", "Random", "" };
+std::array<std::string, 4> modes = { "Off", "Breath", "Random", ""};
 short mode_now = 0;
 typedef enum { STATE_MODE, STATE_B, STATE_A, STATE_LAST } states;
 short select_state = STATE_MODE;
@@ -54,12 +57,17 @@ void update_display_timer() {
     lcd.setCursor(100 + 30, 95);
     lcd.printf("%3d", random_time_left());
     lcd.setCursor(100 + 30, 65);
-    lcd.printf("%3s", modes[mode_now]);  // Random
+    lcd.printf("%3s", modes[mode_now].c_str());  // Random
   }
 }
 
 void update_display_if_needed() {
   unsigned int bc;
+
+  if (need_display_clear) {
+    need_display_clear = false;
+    lcd.clearDisplay();
+  }
 
   if (need_display_timer_update && !need_display_update) {
     update_display_timer();
@@ -102,7 +110,7 @@ void update_display_if_needed() {
     lcd.printf("%02d", coyote_controller->get_powera_pc());
     lcd.setFont(NULL);
     lcd.setCursor(28 - 14, 105);
-    lcd.printf("%s", modes[coyote_controller->get_modea()]);
+    lcd.printf("%s", modes[coyote_controller->get_modea()].c_str());
   }
   //else
   // lcd.printf("   ");
@@ -122,7 +130,7 @@ void update_display_if_needed() {
     lcd.printf("%02d", coyote_controller->get_powerb_pc());
     lcd.setFont(NULL);
     lcd.setCursor(320 - 90 + 28 - 14, 105);
-    lcd.printf("%s", modes[coyote_controller->get_modeb()]);
+    lcd.printf("%s", modes[coyote_controller->get_modeb()].c_str());
   }
   //else
   //  lcd.printf("   ") ;
@@ -141,7 +149,7 @@ void update_display_if_needed() {
   if (coyote_controller->get_isconnected()) {
     if (mode_now == 0) {
       lcd.setCursor(100 + 30, 70);
-      lcd.printf("%s", modes[coyote_controller->get_modea()]);
+      lcd.printf("%s", modes[coyote_controller->get_modea()].c_str());
     }
     if (mode_now == 1) {
       lcd.setCursor(100 + 30, 70);
@@ -264,6 +272,15 @@ void handle_random_mode() {
   }
 }
 
+void coyote_change_handler(coyote_type_of_change t) {
+  if ( t == C_CONNECTED ) {
+    update_display(true);
+    comms_stop_scan();
+    return;
+  }
+  update_display(false);
+}
+
 void handle_buttons() {
   byte b = get_button();
   if (b == 1) {
@@ -277,14 +294,16 @@ void handle_buttons() {
   if (select_state == STATE_MODE) {
     if (b == 3) {
       mode_now++;
-      if (modes[mode_now] == "") {
+      if (modes[mode_now].c_str() == "") {
         mode_now = 0;
       }
       Serial.printf("Set mode %d\n", mode_now);
       if (mode_now == 1) {
         coyote_controller->put_setmode(1, 1);
+        update_display(false);
       } else {
         coyote_controller->put_setmode(0, 0);
+        update_display(false);
       }
     }
   } else if (select_state == STATE_A) {
@@ -345,6 +364,7 @@ void setup() {
 
   delay(100);
   coyote_controller = std::unique_ptr<Coyote>(new Coyote());
+  coyote_controller->set_callback(coyote_change_handler);
   comms_init(0);
 
   xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);

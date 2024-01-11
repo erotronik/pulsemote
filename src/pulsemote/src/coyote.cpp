@@ -3,25 +3,18 @@
 // https://rezreal.github.io/coyote/web-bluetooth-example.html
 // https://github.com/OpenDGLab/OpenDGLab-Connect/blob/master/src/services/DGLab.js
 
-#include <Arduino.h>
 #include <functional>
 
 #include "coyote.h"
 #include "coyote-modes.h"
 
-// from main.cpp. This is all not nicely separated yet...
-extern void update_display(bool clear_display);
-// and from comms.cpp
-extern void comms_stop_scan();
-
-uint8_t COYOTE_SERVICE_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x0b, 0x18, 0x5a, 0x95 };
-uint8_t CONFIG_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x07, 0x15, 0x5a, 0x95 };
-uint8_t POWER_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x04, 0x15, 0x5a, 0x95 };
-uint8_t A_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x06, 0x15, 0x5a, 0x95 };
-uint8_t B_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x05, 0x15, 0x5a, 0x95 };
-uint8_t BATTERY_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x0a, 0x18, 0x5a, 0x95 };
-uint8_t BATTERY_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x00, 0x15, 0x5a, 0x95 };
-
+constexpr uint8_t COYOTE_SERVICE_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x0b, 0x18, 0x5a, 0x95 };
+constexpr uint8_t CONFIG_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x07, 0x15, 0x5a, 0x95 };
+constexpr uint8_t POWER_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x04, 0x15, 0x5a, 0x95 };
+constexpr uint8_t A_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x06, 0x15, 0x5a, 0x95 };
+constexpr uint8_t B_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x05, 0x15, 0x5a, 0x95 };
+constexpr uint8_t BATTERY_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x0a, 0x18, 0x5a, 0x95 };
+constexpr uint8_t BATTERY_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x00, 0x15, 0x5a, 0x95 };
 
 NimBLEUUID COYOTE_SERVICE_BLEUUID(COYOTE_SERVICE_UUID, 16, false);
 NimBLEUUID CONFIG_CHAR_BLEUUID(CONFIG_CHAR_UUID, 16, false);
@@ -30,14 +23,6 @@ NimBLEUUID A_CHAR_BLEUUID(A_CHAR_UUID, 16, false);
 NimBLEUUID B_CHAR_BLEUUID(B_CHAR_UUID, 16, false);
 NimBLEUUID BATTERY_SERVICE_BLEUUID(BATTERY_UUID, 16, false);
 NimBLEUUID BATTERY_CHAR_BLEUUID(BATTERY_CHAR_UUID, 16, false);
-
-NimBLERemoteService* coyoteService;
-NimBLERemoteCharacteristic* configCharacteristic;
-NimBLERemoteCharacteristic* powerCharacteristic;
-NimBLERemoteCharacteristic* patternACharacteristic;
-NimBLERemoteCharacteristic* patternBCharacteristic;
-NimBLERemoteService* batteryService;
-NimBLERemoteCharacteristic* batteryLevelCharacteristic;
 
 std::map<TimerHandle_t, Coyote*> coyote_timer_map;
 
@@ -86,7 +71,10 @@ void Coyote::put_setmode(short a, short b) {
   wantedmodea = a;
   wantedmodeb = b;
   Serial.printf("Set WaveMode %d %d\n", a, b);
-  update_display(false);
+}
+
+void Coyote::set_callback(coyote_callback c) {
+  update_callback = c;
 }
 
 // needs rewriting if we add more than one mode
@@ -94,12 +82,16 @@ void Coyote::put_toggle() {
   put_setmode(1 - wantedmodea, 1 - wantedmodeb);
 }
 
+void Coyote::notify (coyote_type_of_change change) {
+  if ( update_callback )
+    update_callback(change);
+}
+
 void Coyote::parse_power(const uint8_t* buf) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
   coyote_powerA = (buf[2] * 256 + buf[1]) >> 3;
   coyote_powerB = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
   Serial.printf("coyote power A=%d (%d%%) B=%d (%d%%)\n", coyote_powerA, int(coyote_powerA * 100 / coyote_maxPower), coyote_powerB, int(coyote_powerB * 100 / coyote_maxPower));
-  update_display(false);
 }
 
 void Coyote::encode_power(uint8_t* buf, int xpowerA, int xpowerB) {
@@ -146,12 +138,12 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
   if ((wavemodea == 0 || waveclocka == 0) && (wantedmodea != wavemodea)) {
     wavemodea = wantedmodea;
     waveclocka = 0;
-    update_display(false);
+    notify(C_WAVEMODE_A);
   }
   if ((wavemodeb == 0 || waveclockb == 0) && (wantedmodeb != wavemodeb)) {
     wavemodeb = wantedmodeb;
     waveclockb = 0;
-    update_display(false);
+    notify(C_WAVEMODE_B);
   }
   // this sets the power to where we want it (also stop you changing it on the rocker switches)
   if (coyote_powerA != coyote_powerAwanted || coyote_powerB != coyote_powerBwanted) {
@@ -184,10 +176,8 @@ void Coyote::disconnected_callback() {
     coyote_connected = false;
     xTimerStop(coyoteTimer, 0);
     Serial.println("Client onDisconnect");
-    update_display(false);
+    notify(C_DISCONNECTED);
 }
-
-NimBLEClient* bleClient = nullptr;
 
 class CoyoteNimBLEClientCallback : public NimBLEClientCallbacks {
 public:
@@ -207,7 +197,7 @@ private:
   Coyote* coyote_instance;
 };
 
-bool getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
+bool Coyote::getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
   Serial.printf("Getting service\n");
   service = bleClient->getService(uuid);
   if (service == nullptr) {
@@ -246,8 +236,10 @@ void Coyote::batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* dat
 }
 
 void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
-  if (length >= 3)
+  if (length >= 3) {
     parse_power(data);
+    notify(C_POWER);
+  }
   else
     Serial.println("Power callback with incorrect length");
 }
@@ -337,10 +329,7 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   }
   xTimerStart(coyoteTimer, 0);
 
-
   Serial.println("coyote connected");
-  comms_stop_scan();
-
-  update_display(true);
+  notify(C_CONNECTED); // perhaps this should be in the connected callback?
   return true;
 }
