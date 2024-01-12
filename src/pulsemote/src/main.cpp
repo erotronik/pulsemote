@@ -19,12 +19,13 @@ static M5GFX lcd;
 short debug_mode = 0;
 std::unique_ptr<Coyote> coyote_controller;
 
-boolean need_display_clear = false;
-boolean need_display_update = false;
-boolean need_display_timer_update = false;
+bool need_display_clear = false;
+bool need_display_update = false;
+bool need_display_timer_update = false;
 
 void update_display(bool clear_display) {
-  need_display_clear = true;
+  if ( clear_display )
+    need_display_clear = true;
   need_display_update = true;
   need_display_timer_update = true;
 }
@@ -32,7 +33,7 @@ void update_display(bool clear_display) {
 unsigned int blockunsel = 0x2222ffU;
 unsigned int blocksel = 0xff2222U;
 
-std::array<std::string, 4> modes = { "Off", "Breath", "Random", ""};
+std::array<std::string, 3> modes = { "Off", "Breath", "Random"};
 short mode_now = 0;
 typedef enum { STATE_MODE, STATE_B, STATE_A, STATE_LAST } states;
 short select_state = STATE_MODE;
@@ -255,16 +256,18 @@ byte get_button() {
   return 0;
 }
 
+// needs an update if we have more than one mode.
 void handle_random_mode() {
   if (mode_now != 2) return;
   if (millis() > random_timer) {
     Serial.println("Random time to switch");
-    if (coyote_controller->get_modea() == 0) {
+    if (coyote_controller->get_modea() == M_NONE) {
       random_timer = millis() + random(10000, 30000);  // On time is 10-30 seconds
+      coyote_controller->put_setmode(M_BREATH, M_BREATH);
     } else {
       random_timer = millis() + random(30000, 50000);  // Off time is 30-50 seconds
+      coyote_controller->put_setmode(M_NONE, M_NONE);
     }
-    coyote_controller->put_toggle();
   }
   if (millis() > random_display_refresh + 500) {  // update the display every .5 seconds with countdown
     random_display_refresh = millis();
@@ -294,15 +297,15 @@ void handle_buttons() {
   if (select_state == STATE_MODE) {
     if (b == 3) {
       mode_now++;
-      if (modes[mode_now].c_str() == "") {
+      if (mode_now >= modes.size()) {
         mode_now = 0;
       }
       Serial.printf("Set mode %d\n", mode_now);
       if (mode_now == 1) {
-        coyote_controller->put_setmode(1, 1);
+        coyote_controller->put_setmode(M_BREATH, M_BREATH);
         update_display(false);
       } else {
-        coyote_controller->put_setmode(0, 0);
+        coyote_controller->put_setmode(M_NONE, M_NONE);
         update_display(false);
       }
     }

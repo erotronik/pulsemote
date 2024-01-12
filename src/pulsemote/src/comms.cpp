@@ -4,16 +4,7 @@
 #include <NimBLEDevice.h>
 #include <memory>
 
-enum scan_callback_result { SCAN_None, SCAN_Coyote };
 extern short debug_mode;
-
-enum scan_callback_result check_scan_data(const char* ble_manufacturer_specific_data, int length, int rssi) {
-  if (length > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
-    Serial.printf("Found DG-LAB\n");
-    return SCAN_Coyote;
-  }
-  return SCAN_None;
-}
 
 NimBLEServer *pServer = nullptr;
 NimBLECharacteristic * pTxCharacteristic;
@@ -24,11 +15,10 @@ int scanTime = 5; //In seconds
 NimBLEAdvertisedDevice* coyote_device = nullptr;
 extern std::unique_ptr<Coyote> coyote_controller;
 
-class BubblerAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+class PulsemoteAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
       //Serial.printf("Advertised Device: %s \n", advertisedDevice->toString().c_str());
-      auto res = check_scan_data(advertisedDevice->getManufacturerData().c_str(), advertisedDevice->getManufacturerData().length(), advertisedDevice->getRSSI());
-      if ( res == SCAN_Coyote ) {
+      if (Coyote::is_coyote(advertisedDevice)) {
         // can't connect while scanning is going on - it locks up everything.
         coyote_device = new NimBLEAdvertisedDevice(*advertisedDevice);
         NimBLEDevice::getScan()->stop();
@@ -40,7 +30,7 @@ void comms_init(short myid) {
   NimBLEDevice::init("x");
   NimBLEDevice::setPower(ESP_PWR_LVL_P6, ESP_BLE_PWR_TYPE_ADV); // send advertisements with 6 dbm
   pBLEScan = NimBLEDevice::getScan(); //create new scan
-  pBLEScan->setAdvertisedDeviceCallbacks(new BubblerAdvertisedDeviceCallbacks());
+  pBLEScan->setAdvertisedDeviceCallbacks(new PulsemoteAdvertisedDeviceCallbacks());
   pBLEScan->setActiveScan(false); //active scan uses more power, but get results faster
   pBLEScan->setInterval(250);
   pBLEScan->setWindow(125);  // less or equal setInterval value
@@ -87,4 +77,3 @@ void comms_uart_colorpicker(void) {
     Serial.printf("ok\n");
   }
 }
-

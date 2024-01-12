@@ -4,6 +4,7 @@
 // https://github.com/OpenDGLab/OpenDGLab-Connect/blob/master/src/services/DGLab.js
 
 #include <functional>
+#include <NimBLEDevice.h>
 
 #include "coyote.h"
 #include "coyote-modes.h"
@@ -26,7 +27,16 @@ NimBLEUUID BATTERY_CHAR_BLEUUID(BATTERY_CHAR_UUID, 16, false);
 
 std::map<TimerHandle_t, Coyote*> coyote_timer_map;
 
-boolean Coyote::get_isconnected() {
+bool Coyote::is_coyote(NimBLEAdvertisedDevice* advertisedDevice) {
+  auto ble_manufacturer_specific_data = advertisedDevice->getManufacturerData();
+  if (ble_manufacturer_specific_data.length() > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
+    Serial.printf("Found DG-LAB\n");
+    return true;
+  }
+  return false;
+}
+
+bool Coyote::get_isconnected() {
   return coyote_connected;
 }
 
@@ -59,15 +69,15 @@ uint8_t Coyote::get_batterylevel() {
   return coyote_batterylevel;
 }
 
-short Coyote::get_modea() {
+coyote_mode Coyote::get_modea() {
   return wantedmodea;
 }
 
-short Coyote::get_modeb() {
+coyote_mode Coyote::get_modeb() {
   return wantedmodeb;
 }
 
-void Coyote::put_setmode(short a, short b) {
+void Coyote::put_setmode(coyote_mode a, coyote_mode b) {
   wantedmodea = a;
   wantedmodeb = b;
   Serial.printf("Set WaveMode %d %d\n", a, b);
@@ -75,11 +85,6 @@ void Coyote::put_setmode(short a, short b) {
 
 void Coyote::set_callback(coyote_callback c) {
   update_callback = c;
-}
-
-// needs rewriting if we add more than one mode
-void Coyote::put_toggle() {
-  put_setmode(1 - wantedmodea, 1 - wantedmodeb);
 }
 
 void Coyote::notify (coyote_type_of_change change) {
@@ -152,15 +157,23 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
       Serial.println("Failed to write power");
   }
   // Do WaveA
-  if (coyote_powerA > 0 && wavemodea != 0) {
-    coyote_wave_ramp(&waveclocka, &wavemodea, &coyote_ax, &coyote_ay, &coyote_az);
+  if (coyote_powerA > 0 && wavemodea != M_NONE) {
+    switch ( wavemodea ) {
+      case M_BREATH:
+        coyote_mode_breath(&waveclocka, &coyote_ax, &coyote_ay, &coyote_az);
+        break;
+    }
     encode_pattern(buf, coyote_ax, coyote_ay, coyote_az);
     if (!patternACharacteristic->writeValue(buf, 3))
       Serial.println("Failed to write pattern A");
   }
   // Do WaveB
   if (coyote_powerB > 0 && wavemodeb != 0) {
-    coyote_wave_ramp(&waveclockb, &wavemodeb, &coyote_bx, &coyote_by, &coyote_bz);
+    switch ( wavemodeb ) {
+      case M_BREATH:
+        coyote_mode_breath(&waveclockb, &coyote_bx, &coyote_by, &coyote_bz);
+        break;
+    }
     encode_pattern(buf, coyote_bx, coyote_by, coyote_bz);
     if (!patternBCharacteristic->writeValue(buf, 3)) {
       Serial.println("Failed to write pattern B");
@@ -248,8 +261,12 @@ Coyote::Coyote() {
 }
 
 Coyote::~Coyote() {
-  if ( coyoteTimer )
+  if ( coyoteTimer ) {
     coyote_timer_map.erase(coyoteTimer);
+    xTimerDelete(coyoteTimer, 100);
+  }
+  bleClient->deleteServices(); // deletes all services, which should delete all characteristics
+  NimBLEDevice::deleteClient(bleClient); // will also disconnect
 }
 
 bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
@@ -320,8 +337,8 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   if (!powerCharacteristic->writeValue(buf, 3))
     Serial.println("Failed to write powerCharacteristic");
 
-  wavemodea = 1;
-  wavemodeb = 1;
+  wavemodea = M_NONE;
+  wavemodeb = M_NONE;
 
   if (!coyoteTimer) {
     coyoteTimer = xTimerCreate(nullptr, pdMS_TO_TICKS(100), true, nullptr, coyote_timer_callback);

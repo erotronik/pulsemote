@@ -3,10 +3,12 @@
 #define start_powerA 0 // max is usually 2000
 #define start_powerB 0 // max is usually 2000
 
+
 #include <NimBLEDevice.h>
 
 class CoyoteNimBLEClientCallback;
 
+enum coyote_mode { M_NONE, M_BREATH };
 enum coyote_type_of_change { C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTED };
 typedef std::function<void (coyote_type_of_change change)> coyote_callback;
 
@@ -15,21 +17,22 @@ public:
     Coyote();
     ~Coyote();
 
-    boolean get_isconnected();
+    bool get_isconnected();
     bool connect_to_device(NimBLEAdvertisedDevice* coyote_device);
 
     void put_powerup(short a, short b);
     int get_powera_pc();
     int get_powerb_pc();
     uint8_t get_batterylevel();
-    short get_modea();
-    short get_modeb();
-    void put_setmode(short a, short b);
-    void put_toggle();
+    coyote_mode get_modea();
+    coyote_mode get_modeb();
+    void put_setmode(coyote_mode a, coyote_mode b);
     void setup();
     void timer_callback(TimerHandle_t xTimerID);
 
     void set_callback(coyote_callback);
+    // returns true if an advertised device is a coyote
+    static bool is_coyote(NimBLEAdvertisedDevice* advertisedDevice);
 
 private:
     friend class CoyoteNimBLEClientCallback;
@@ -58,24 +61,26 @@ private:
     unsigned short coyote_powerB;
     unsigned short coyote_powerAwanted = start_powerA;
     unsigned short coyote_powerBwanted = start_powerB;
-    short wavemodea = 0;
-    short wavemodeb = 0;
-    short wantedmodea = 0;
-    short wantedmodeb = 0;
+    coyote_mode wavemodea = M_NONE;
+    coyote_mode wavemodeb = M_NONE;
+    coyote_mode wantedmodea = M_NONE;
+    coyote_mode wantedmodeb = M_NONE;
     uint8_t coyote_powerStep = 0;
     uint8_t coyote_batterylevel = 0;
     uint16_t coyote_maxPower = 1;
-    boolean coyote_connected = false;
+    bool coyote_connected = false;
     NimBLEClient* bleClient = nullptr;
 
     TimerHandle_t coyoteTimer = nullptr;
 
     NimBLERemoteService* coyoteService;
+    // deletion handled by coyoteService
     NimBLERemoteCharacteristic* configCharacteristic;
     NimBLERemoteCharacteristic* powerCharacteristic;
     NimBLERemoteCharacteristic* patternACharacteristic;
     NimBLERemoteCharacteristic* patternBCharacteristic;
     NimBLERemoteService* batteryService;
+    // deletion handled by batteryService
     NimBLERemoteCharacteristic* batteryLevelCharacteristic;
 
     coyote_callback update_callback;
