@@ -5,14 +5,8 @@
 #include <memory>
 
 #include "coyote.h"
+#include "comms.h"
 
-// and from comms.cpp
-extern void comms_stop_scan();
-
-// pre-declare functions from other files. This is not nice.
-extern void comms_init(short myid);
-extern void comms_uart_colorpicker();
-extern void scan_loop();
 
 static M5GFX lcd;
 //static LGFX_Sprite sprite(&lcd);

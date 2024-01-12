@@ -69,11 +69,11 @@ uint8_t Coyote::get_batterylevel() {
   return coyote_batterylevel;
 }
 
-coyote_mode Coyote::get_modea() {
+coyote_mode Coyote::get_modea() const {
   return wantedmodea;
 }
 
-coyote_mode Coyote::get_modeb() {
+coyote_mode Coyote::get_modeb() const {
   return wantedmodeb;
 }
 
@@ -92,35 +92,41 @@ void Coyote::notify (coyote_type_of_change change) {
     update_callback(change);
 }
 
-void Coyote::parse_power(const uint8_t* buf) {
+void Coyote::parse_power(const std::vector<uint8_t> buf) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
   coyote_powerA = (buf[2] * 256 + buf[1]) >> 3;
   coyote_powerB = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
   Serial.printf("coyote power A=%d (%d%%) B=%d (%d%%)\n", coyote_powerA, int(coyote_powerA * 100 / coyote_maxPower), coyote_powerB, int(coyote_powerB * 100 / coyote_maxPower));
 }
 
-void Coyote::encode_power(uint8_t* buf, int xpowerA, int xpowerB) {
+std::vector<uint8_t> Coyote::encode_power(int xpowerA, int xpowerB) {
+  std::vector<uint8_t> buf(3);
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
   buf[2] = (xpowerA & 0b11111100000) >> 5;
   buf[1] = (xpowerA & 0b11111) << 3 | (xpowerB & 0b11100000000) >> 8;
   buf[0] = xpowerB & 0xff;
   Serial.printf("coyote power A=%d B=%d\n", xpowerA, xpowerB);
+  return buf;
 }
 
-void Coyote::encode_pattern(uint8_t* buf, int ax, int ay, int az) {
+std::vector<uint8_t> Coyote::encode_pattern(coyote_pattern pattern) {
+  std::vector<uint8_t> buf(3);
   // flipFirstAndThirdByte(zero(4) ~ uint(5).as("az") ~ uint(10).as("ay") ~ uint(5).as("ax"))
-  buf[2] = (az & 0b11111) >> 1;
-  buf[1] = ((az & 0b1) * 128) | ((ay & 0b1111111000) >> 3);
-  buf[0] = (ax & 0b11111) | ((ay & 0b111) << 5);
+  buf[2] = (pattern.amplitude & 0b11111) >> 1;
+  buf[1] = ((pattern.amplitude & 0b1) * 128) | ((pattern.pause_length & 0b1111111000) >> 3);
+  buf[0] = (pattern.pulse_length & 0b11111) | ((pattern.pause_length & 0b111) << 5);
   //Serial.printf("encode pattern %02x %02x %02x ax=%d ay=%d az=%d\n", buf[2],buf[1],buf[0],ax,ay,az);
+  return buf;
 }
 
-void Coyote::parse_pattern(const uint8_t* buf, int* ax, int* ay, int* az) {
+coyote_pattern Coyote::parse_pattern(const std::vector<uint8_t> buf) {
+  coyote_pattern out;
   // flipFirstAndThirdByte(zero(4) ~ uint(5).as("az") ~ uint(10).as("ay") ~ uint(5).as("ax"))
-  *az = ((buf[2] * 256 + buf[1]) & 0b0000111110000000) >> 7;
-  *ay = ((buf[2] * 256 * 256 + buf[1] * 256 + buf[0]) & 0b000000000111111111100000) >> 5;
-  *ax = (buf[0]) & 0b11111;
+  out.amplitude = ((buf[2] * 256 + buf[1]) & 0b0000111110000000) >> 7;
+  out.pause_length = ((buf[2] * 256 * 256 + buf[1] * 256 + buf[0]) & 0b000000000111111111100000) >> 5;
+  out.pulse_length = (buf[0]) & 0b11111;
   //Serial.printf("parse pattern %02x %02x %02x ax=%d ay=%d az=%d\n", buf[2],buf[1],buf[0],*ax,*ay,*az);
+  return out;
 }
 
 void coyote_timer_callback(TimerHandle_t xTimerID) {
@@ -135,8 +141,6 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
 // This is called every 100mS to provide the coyote box with what to do next
 //
 void Coyote::timer_callback(TimerHandle_t xTimerID) {
-  uint8_t buf[4];
-
   if (!coyote_connected) return;
 
   // Want to switch modes, only if no current mode or end of a cycle - no glitching!
@@ -152,30 +156,30 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
   }
   // this sets the power to where we want it (also stop you changing it on the rocker switches)
   if (coyote_powerA != coyote_powerAwanted || coyote_powerB != coyote_powerBwanted) {
-    encode_power(buf, coyote_powerAwanted, coyote_powerBwanted);
-    if (!powerCharacteristic->writeValue(buf, 3))
+    auto enc = encode_power(coyote_powerAwanted, coyote_powerBwanted);
+    if (!powerCharacteristic->writeValue(enc, 3))
       Serial.println("Failed to write power");
   }
   // Do WaveA
   if (coyote_powerA > 0 && wavemodea != M_NONE) {
     switch ( wavemodea ) {
       case M_BREATH:
-        coyote_mode_breath(&waveclocka, &coyote_ax, &coyote_ay, &coyote_az);
+        pattern_a = coyote_mode_breath(waveclocka);
         break;
     }
-    encode_pattern(buf, coyote_ax, coyote_ay, coyote_az);
-    if (!patternACharacteristic->writeValue(buf, 3))
+    auto enc = encode_pattern(pattern_a);
+    if (!patternACharacteristic->writeValue(enc, 3))
       Serial.println("Failed to write pattern A");
   }
   // Do WaveB
   if (coyote_powerB > 0 && wavemodeb != 0) {
     switch ( wavemodeb ) {
       case M_BREATH:
-        coyote_mode_breath(&waveclockb, &coyote_bx, &coyote_by, &coyote_bz);
+        pattern_b = coyote_mode_breath(waveclockb);
         break;
     }
-    encode_pattern(buf, coyote_bx, coyote_by, coyote_bz);
-    if (!patternBCharacteristic->writeValue(buf, 3)) {
+    auto enc = encode_pattern(pattern_b);
+    if (!patternBCharacteristic->writeValue(enc, 3)) {
       Serial.println("Failed to write pattern B");
     }
   }
@@ -250,7 +254,7 @@ void Coyote::batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* dat
 
 void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
   if (length >= 3) {
-    parse_power(data);
+    parse_power({data, data+length});
     notify(C_POWER);
   }
   else
@@ -322,18 +326,17 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
 
   auto powerData = powerCharacteristic->readValue();
   if (powerData.size() >= 3)
-    parse_power(powerData.begin());
+    parse_power({powerData.begin(), powerData.end()});
 
   auto patternAData = patternACharacteristic->readValue();
   auto patternBData = patternBCharacteristic->readValue();
   if (patternAData.size() < 3 || patternBData.size() < 3) {
     Serial.println("No pattern data?");
   }
-  parse_pattern(patternAData.begin(), &coyote_ax, &coyote_ay, &coyote_az);
-  parse_pattern(patternBData.begin(), &coyote_bx, &coyote_by, &coyote_bz);
+  pattern_a = parse_pattern({patternAData.begin(), patternAData.end()});
+  pattern_b = parse_pattern({patternBData.begin(), patternBData.end()});
 
-  uint8_t buf[5];
-  encode_power(buf, start_powerA, start_powerB);
+  auto buf = encode_power(start_powerA, start_powerB);
   if (!powerCharacteristic->writeValue(buf, 3))
     Serial.println("Failed to write powerCharacteristic");
 

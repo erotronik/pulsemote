@@ -12,6 +12,12 @@ enum coyote_mode { M_NONE, M_BREATH };
 enum coyote_type_of_change { C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTED };
 typedef std::function<void (coyote_type_of_change change)> coyote_callback;
 
+struct coyote_pattern {
+    int pulse_length = 0; // 0-31 ms
+    int pause_length = 0; // 0-1023 ms
+    int amplitude = 0; // 0-31
+};
+
 class Coyote {
 public:
     Coyote();
@@ -24,8 +30,8 @@ public:
     int get_powera_pc();
     int get_powerb_pc();
     uint8_t get_batterylevel();
-    coyote_mode get_modea();
-    coyote_mode get_modeb();
+    coyote_mode get_modea() const;
+    coyote_mode get_modeb() const;
     void put_setmode(coyote_mode a, coyote_mode b);
     void setup();
     void timer_callback(TimerHandle_t xTimerID);
@@ -40,10 +46,10 @@ private:
     void batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify);
     void power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify);
 
-    void parse_power(const uint8_t* buf);
-    void encode_power(uint8_t* buf, int xpowerA, int xpowerB);
-    void encode_pattern(uint8_t* buf, int ax, int ay, int az);
-    void parse_pattern(const uint8_t* buf, int* ax, int* ay, int* az);
+    void parse_power(const std::vector<uint8_t>);
+    static std::vector<uint8_t> encode_power(int xpowerA, int xpowerB);
+    static std::vector<uint8_t> encode_pattern(coyote_pattern);
+    static coyote_pattern parse_pattern(const std::vector<uint8_t>);
 
     bool getService(NimBLERemoteService*& service, NimBLEUUID uuid);
 
@@ -52,8 +58,8 @@ private:
     void disconnected_callback();
     void notify(coyote_type_of_change);
 
-    int coyote_ax = 0; int coyote_ay = 0; int coyote_az = 0;
-    int coyote_bx = 0; int coyote_by = 0; int coyote_bz = 0;
+    coyote_pattern pattern_a;
+    coyote_pattern pattern_b;
 
     short waveclocka = 0;
     short waveclockb = 0;

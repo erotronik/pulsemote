@@ -4,13 +4,12 @@
 #include <NimBLEDevice.h>
 #include <memory>
 
-extern short debug_mode;
-
 NimBLEServer *pServer = nullptr;
 NimBLECharacteristic * pTxCharacteristic;
-bool device_connected = false;
 NimBLEScan* pBLEScan;
-int scanTime = 5; //In seconds
+
+bool device_connected = false;
+int scanTime = 5; // In seconds
 
 NimBLEAdvertisedDevice* coyote_device = nullptr;
 extern std::unique_ptr<Coyote> coyote_controller;
@@ -29,9 +28,9 @@ class PulsemoteAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks
 void comms_init(short myid) {
   NimBLEDevice::init("x");
   NimBLEDevice::setPower(ESP_PWR_LVL_P6, ESP_BLE_PWR_TYPE_ADV); // send advertisements with 6 dbm
-  pBLEScan = NimBLEDevice::getScan(); //create new scan
+  pBLEScan = NimBLEDevice::getScan(); // create new scan
   pBLEScan->setAdvertisedDeviceCallbacks(new PulsemoteAdvertisedDeviceCallbacks());
-  pBLEScan->setActiveScan(false); //active scan uses more power, but get results faster
+  pBLEScan->setActiveScan(false); // active scan uses more power, but get results faster
   pBLEScan->setInterval(250);
   pBLEScan->setWindow(125);  // less or equal setInterval value
   Serial.println("Started ble scanning");
@@ -71,9 +70,5 @@ void comms_uart_colorpicker(void) {
       Serial.printf("rebooting\n");
       delay(100);
       ESP.restart();
-  } else if (command == 'D') {
-    command = Serial.read();
-    debug_mode = command - '0';
-    Serial.printf("ok\n");
   }
 }
