@@ -9,13 +9,12 @@
 
 
 static M5GFX lcd;
-//static LGFX_Sprite sprite(&lcd);
-short debug_mode = 0;
 std::unique_ptr<Coyote> coyote_controller;
 
 bool need_display_clear = false;
 bool need_display_update = false;
 bool need_display_timer_update = false;
+coyote_type_of_change last_change = C_NONE;
 
 void update_display(bool clear_display) {
   if ( clear_display )
@@ -83,7 +82,10 @@ void update_display_if_needed() {
     lcd.setTextColor(0xFFccbbU);
     lcd.printf("Bluetooth remote\nfor DG-LAB 2.0\n\n");
     lcd.setTextColor(0xFFFFFFU);
-    lcd.printf("Scanning...");
+    if ( last_change == C_CONNECTING )
+      lcd.printf("Connecting...");
+    else
+      lcd.printf("Scanning...");
     lcd.setFont(NULL);
     return;
   }
@@ -270,6 +272,7 @@ void handle_random_mode() {
 }
 
 void coyote_change_handler(coyote_type_of_change t) {
+  last_change = t;
   if ( t == C_CONNECTED ) {
     update_display(true);
     comms_stop_scan();

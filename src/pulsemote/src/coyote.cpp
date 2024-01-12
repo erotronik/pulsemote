@@ -141,7 +141,10 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
 // This is called every 100mS to provide the coyote box with what to do next
 //
 void Coyote::timer_callback(TimerHandle_t xTimerID) {
-  if (!coyote_connected) return;
+  uint8_t buf[4];
+
+  if (!coyote_connected)
+    return;
 
   // Want to switch modes, only if no current mode or end of a cycle - no glitching!
   if ((wavemodea == 0 || waveclocka == 0) && (wantedmodea != wavemodea)) {
@@ -157,8 +160,8 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
   // this sets the power to where we want it (also stop you changing it on the rocker switches)
   if (coyote_powerA != coyote_powerAwanted || coyote_powerB != coyote_powerBwanted) {
     auto enc = encode_power(coyote_powerAwanted, coyote_powerBwanted);
-    if (!powerCharacteristic->writeValue(enc, 3))
-      Serial.println("Failed to write power");
+    if (!powerCharacteristic->writeValue(enc))
+      Serial.printf("Failed to write power %u %u %u\n", buf[0], buf[1], buf[2]);
   }
   // Do WaveA
   if (coyote_powerA > 0 && wavemodea != M_NONE) {
@@ -168,7 +171,7 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
         break;
     }
     auto enc = encode_pattern(pattern_a);
-    if (!patternACharacteristic->writeValue(enc, 3))
+    if (!patternACharacteristic->writeValue(enc))
       Serial.println("Failed to write pattern A");
   }
   // Do WaveB
@@ -179,7 +182,7 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
         break;
     }
     auto enc = encode_pattern(pattern_b);
-    if (!patternBCharacteristic->writeValue(enc, 3)) {
+    if (!patternBCharacteristic->writeValue(enc)) {
       Serial.println("Failed to write pattern B");
     }
   }
@@ -192,6 +195,9 @@ void Coyote::connected_callback() {
 void Coyote::disconnected_callback() {
     coyote_connected = false;
     xTimerStop(coyoteTimer, 0);
+    //bleClient->deleteServices();
+    //NimBLEDevice::deleteClient(bleClient);
+    //bleClient = nullptr;
     Serial.println("Client onDisconnect");
     notify(C_DISCONNECTED);
 }
@@ -215,7 +221,7 @@ private:
 };
 
 bool Coyote::getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
-  Serial.printf("Getting service\n");
+  Serial.printf("Getting service %s\n", uuid.toString().c_str());
   service = bleClient->getService(uuid);
   if (service == nullptr) {
     Serial.print("Failed to find service UUID: ");
@@ -226,7 +232,7 @@ bool Coyote::getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
 }
 
 bool getCharacteristic(NimBLERemoteService* service, NimBLERemoteCharacteristic*& c, NimBLEUUID uuid, notify_callback notifyCallback = nullptr) {
-  Serial.printf("Getting characteristic\n");
+  Serial.printf("Getting characteristic %s\n", uuid.toString().c_str());
   c = service->getCharacteristic(uuid);
   if (c == nullptr) {
     Serial.print("Failed to find characteristic UUID: ");
@@ -282,6 +288,8 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
     bleClient->setClientCallbacks(new CoyoteNimBLEClientCallback(this));
   }
 
+  notify(C_CONNECTING);
+
   Serial.printf("Will try to connect to Coyote at %s\n", coyote_device->getAddress().toString().c_str());
   if (!bleClient->connect(coyote_device)) {
     Serial.println("Connection failed");
@@ -312,7 +320,6 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   }
 
   Serial.println("Found services and characteristics");
-
   coyote_connected = true;
 
   coyote_batterylevel = batteryLevelCharacteristic->readValue<uint8_t>();
@@ -328,7 +335,9 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   if (powerData.size() >= 3)
     parse_power({powerData.begin(), powerData.end()});
 
+  Serial.printf("read pattern a\n");
   auto patternAData = patternACharacteristic->readValue();
+  Serial.printf("read pattern b\n");
   auto patternBData = patternBCharacteristic->readValue();
   if (patternAData.size() < 3 || patternBData.size() < 3) {
     Serial.println("No pattern data?");
@@ -337,7 +346,7 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   pattern_b = parse_pattern({patternBData.begin(), patternBData.end()});
 
   auto buf = encode_power(start_powerA, start_powerB);
-  if (!powerCharacteristic->writeValue(buf, 3))
+  if (!powerCharacteristic->writeValue(buf))
     Serial.println("Failed to write powerCharacteristic");
 
   wavemodea = M_NONE;
@@ -350,6 +359,6 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   xTimerStart(coyoteTimer, 0);
 
   Serial.println("coyote connected");
-  notify(C_CONNECTED); // perhaps this should be in the connected callback?
+  notify(C_CONNECTED);
   return true;
 }
