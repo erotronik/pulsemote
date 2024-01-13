@@ -31,3 +31,39 @@ coyote_pattern coyote_mode_breath(uint32_t &waveclock, uint32_t &cyclecount) {
   }
   return out;
 }
+
+coyote_pattern coyote_mode_waves(uint32_t &waveclock, uint32_t &cyclecount) {
+  coyote_pattern out;
+
+  constexpr uint16_t rampUpTime = 30;
+  constexpr uint16_t rampDownTime = 50;
+  constexpr uint16_t cycleTime = rampUpTime + rampDownTime;
+  constexpr uint16_t maxAmp = 20;
+  // double piOverTwo = std::atan(1) * 2; // incorrectly not marked constexpr in stdlib
+  constexpr double piOverTwo = M_PI_2;
+
+  out.pulse_length = 10;
+
+  if ( waveclock <= rampUpTime ) {
+    // Sin wave goes from 0 -> 1 over the values 0 -> pi/2
+    auto index = (double)waveclock / (double)rampUpTime;
+    out.amplitude = std::floor(std::sin((piOverTwo * index)) * (double)maxAmp);
+    //Serial.printf("1: waveclock: %u, cyclecount: %u, pause_length: %u, amplitude: %u\n", waveclock, cyclecount, out.pause_length, out.amplitude);
+  } else {
+    // Sin wave goes from 1 -> 0 over the values pi/2 -> pi
+    auto index = (double)(waveclock - rampUpTime) / (double)rampDownTime;
+    out.amplitude = std::floor(std::sin((piOverTwo * index) + piOverTwo) * (double)maxAmp);
+    //Serial.printf("2: waveclock: %u, cyclecount: %u, pause_length: %u, amplitude: %u\n", waveclock, cyclecount, out.pause_length, out.amplitude);
+  }
+
+  // Longer pause length creates more intense feelings
+  // so make this longer to a peak and then cycle back.
+  out.pause_length = 10 * ((cyclecount % 8) + 2);
+
+  waveclock++;
+  if ( waveclock > cycleTime ) {
+    waveclock = 0;
+    cyclecount++;
+  }
+  return out;
+}

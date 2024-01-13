@@ -8,7 +8,7 @@
 class CoyoteNimBLEClientCallback;
 class Coyote;
 
-enum coyote_mode { M_NONE, M_BREATH };
+enum coyote_mode { M_NONE, M_BREATH, M_WAVES };
 enum coyote_type_of_change { C_NONE, C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTING, C_CONNECTED };
 typedef std::function<void (coyote_type_of_change change)> coyote_callback;
 

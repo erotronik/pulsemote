@@ -127,6 +127,7 @@ void CoyoteChannel::update_pattern() {
   if ((wavemode == M_NONE || waveclock == 0) && (wanted_mode != wavemode)) {
     wavemode = wanted_mode;
     waveclock = 0;
+    cyclecount = 0;
     parent->notify(C_WAVEMODE_A);
   }
 
@@ -134,6 +135,9 @@ void CoyoteChannel::update_pattern() {
     switch ( wavemode ) {
       case M_BREATH:
         pattern = coyote_mode_breath(waveclock, cyclecount);
+        break;
+      case M_WAVES:
+        pattern = coyote_mode_waves(waveclock, cyclecount);
         break;
     }
   }

@@ -26,7 +26,7 @@ void update_display(bool clear_display) {
 unsigned int blockunsel = 0x2222ffU;
 unsigned int blocksel = 0xff2222U;
 
-std::array<std::string, 3> modes = { "Off", "Breath", "Random"};
+std::array<std::string, 4> modes = { "Off", "Breath", "Waves", "Random"};
 short mode_now = 0;
 typedef enum { STATE_MODE, STATE_B, STATE_A, STATE_LAST } states;
 short select_state = STATE_MODE;
@@ -47,7 +47,7 @@ void update_display_timer() {
     bc = blocksel;
   lcd.setTextColor(0xFFFFFFU, bc);
 
-  if (mode_now == 2) {
+  if (mode_now == 3) {
     lcd.setCursor(100 + 30, 95);
     lcd.printf("%3d", random_time_left());
     lcd.setCursor(100 + 30, 65);
@@ -148,7 +148,7 @@ void update_display_if_needed() {
       lcd.setCursor(100 + 30, 70);
       lcd.printf("%s", modes[coyote_controller->chan_a()->get_mode()].c_str());
     }
-    if (mode_now == 1) {
+    if (mode_now == 1 || mode_now == 2) {
       lcd.setCursor(100 + 30, 70);
       lcd.printf("On");
     }
@@ -254,7 +254,7 @@ byte get_button() {
 
 // needs an update if we have more than one mode.
 void handle_random_mode() {
-  if (mode_now != 2) return;
+  if (mode_now != 3) return;
   if (millis() > random_timer) {
     Serial.println("Random time to switch");
     if (coyote_controller->chan_a()->get_mode() == M_NONE) {
@@ -303,6 +303,10 @@ void handle_buttons() {
       if (mode_now == 1) {
         coyote_controller->chan_a()->put_setmode(M_BREATH);
         coyote_controller->chan_b()->put_setmode(M_BREATH);
+        update_display(false);
+      } else if ( mode_now == 2 ) {
+        coyote_controller->chan_a()->put_setmode(M_WAVES);
+        coyote_controller->chan_b()->put_setmode(M_WAVES);
         update_display(false);
       } else {
         coyote_controller->chan_a()->put_setmode(M_NONE);
