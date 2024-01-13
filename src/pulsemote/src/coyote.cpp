@@ -27,6 +27,8 @@ NimBLEUUID BATTERY_CHAR_BLEUUID(BATTERY_CHAR_UUID, 16, false);
 
 std::map<TimerHandle_t, Coyote*> coyote_timer_map;
 
+CoyoteChannel::CoyoteChannel(Coyote* c, std::string name) : parent(c), channel_name(name) {}
+
 bool Coyote::is_coyote(NimBLEAdvertisedDevice* advertisedDevice) {
   auto ble_manufacturer_specific_data = advertisedDevice->getManufacturerData();
   if (ble_manufacturer_specific_data.length() > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
@@ -41,46 +43,29 @@ bool Coyote::get_isconnected() {
 }
 
 // go up or down in steps of 1%, but never above 70% of max
-void Coyote::put_powerup(short a, short b) {
-  if (a > 5 || b > 5) return;  // max 5% in one go, sanity check
-  int pc = coyote_maxPower / 100;
-  int max = coyote_maxPower * .70;  // HARD LIMIT HERE just for sanity
-  if (a < 0 && coyote_powerAwanted < -a * pc) return;
-  if (b < 0 && coyote_powerBwanted < -b * pc) return;
-  coyote_powerAwanted += a * pc;
-  coyote_powerBwanted += b * pc;
-  if (coyote_powerAwanted > max) {
-    coyote_powerAwanted = max;
-  }
-  if (coyote_powerBwanted > max) {
-    coyote_powerBwanted = max;
+void CoyoteChannel::put_power_diff(short change) {
+  if (change > 5) return;  // max 5% in one go, sanity check
+  int pc = parent->coyote_maxPower / 100;
+  int max = parent->coyote_maxPower * .70;  // HARD LIMIT HERE just for sanity
+  if (change < 0 && coyote_power_wanted < -change * pc) return;
+  coyote_power_wanted += change * pc;
+  if (coyote_power_wanted > max) {
+    coyote_power_wanted = max;
   }
 }
 
-int Coyote::get_powera_pc() {
-  return int(coyote_powerA * 100 / coyote_maxPower);
-}
-
-int Coyote::get_powerb_pc() {
-  return int(coyote_powerB * 100 / coyote_maxPower);
+int CoyoteChannel::get_power_pc() const {
+  return int(coyote_power * 100 / parent->coyote_maxPower);
 }
 
 uint8_t Coyote::get_batterylevel() {
   return coyote_batterylevel;
 }
 
-coyote_mode Coyote::get_modea() const {
-  return wantedmodea;
-}
-
-coyote_mode Coyote::get_modeb() const {
-  return wantedmodeb;
-}
-
-void Coyote::put_setmode(coyote_mode a, coyote_mode b) {
-  wantedmodea = a;
-  wantedmodeb = b;
-  Serial.printf("Set WaveMode %d %d\n", a, b);
+void CoyoteChannel::put_setmode(coyote_mode mode) {
+  wanted_mode = mode;
+  wavemode_changed = true;
+  Serial.printf("Set WaveMode %s %d\n", channel_name.c_str(), mode);
 }
 
 void Coyote::set_callback(coyote_callback c) {
@@ -94,9 +79,9 @@ void Coyote::notify (coyote_type_of_change change) {
 
 void Coyote::parse_power(const std::vector<uint8_t> buf) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
-  coyote_powerA = (buf[2] * 256 + buf[1]) >> 3;
-  coyote_powerB = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
-  Serial.printf("coyote power A=%d (%d%%) B=%d (%d%%)\n", coyote_powerA, int(coyote_powerA * 100 / coyote_maxPower), coyote_powerB, int(coyote_powerB * 100 / coyote_maxPower));
+  channel_a->coyote_power = (buf[2] * 256 + buf[1]) >> 3;
+  channel_b->coyote_power = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
+  Serial.printf("coyote power A=%d (%d%%) B=%d (%d%%)\n", channel_a->coyote_power, int(channel_a->coyote_power * 100 / coyote_maxPower), channel_b->coyote_power, int(channel_b->coyote_power * 100 / coyote_maxPower));
 }
 
 std::vector<uint8_t> Coyote::encode_power(int xpowerA, int xpowerB) {
@@ -138,53 +123,48 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
   }
 }
 
+void CoyoteChannel::update_pattern() {
+  if ((wavemode == M_NONE || waveclock == 0) && (wanted_mode != wavemode)) {
+    wavemode = wanted_mode;
+    waveclock = 0;
+    parent->notify(C_WAVEMODE_A);
+  }
+
+  if (coyote_power > 0 && wavemode != M_NONE) {
+    switch ( wavemode ) {
+      case M_BREATH:
+        pattern = coyote_mode_breath(waveclock, cyclecount);
+        break;
+    }
+  }
+}
+
 // This is called every 100mS to provide the coyote box with what to do next
 //
 void Coyote::timer_callback(TimerHandle_t xTimerID) {
-  uint8_t buf[4];
-
   if (!coyote_connected)
     return;
 
-  // Want to switch modes, only if no current mode or end of a cycle - no glitching!
-  if ((wavemodea == 0 || waveclocka == 0) && (wantedmodea != wavemodea)) {
-    wavemodea = wantedmodea;
-    waveclocka = 0;
-    notify(C_WAVEMODE_A);
-  }
-  if ((wavemodeb == 0 || waveclockb == 0) && (wantedmodeb != wavemodeb)) {
-    wavemodeb = wantedmodeb;
-    waveclockb = 0;
-    notify(C_WAVEMODE_B);
-  }
   // this sets the power to where we want it (also stop you changing it on the rocker switches)
-  if (coyote_powerA != coyote_powerAwanted || coyote_powerB != coyote_powerBwanted) {
-    auto enc = encode_power(coyote_powerAwanted, coyote_powerBwanted);
+  if (channel_a->coyote_power != channel_a->coyote_power_wanted || channel_b->coyote_power != channel_b->coyote_power_wanted) {
+    auto enc = encode_power(channel_a->coyote_power_wanted, channel_b->coyote_power_wanted);
     if (!powerCharacteristic->writeValue(enc))
-      Serial.printf("Failed to write power %u %u %u\n", buf[0], buf[1], buf[2]);
+      Serial.printf("Failed to write power %u %u %u\n", enc[0], enc[1], enc[2]);
   }
   // Do WaveA
-  if (coyote_powerA > 0 && wavemodea != M_NONE) {
-    switch ( wavemodea ) {
-      case M_BREATH:
-        pattern_a = coyote_mode_breath(waveclocka);
-        break;
-    }
-    auto enc = encode_pattern(pattern_a);
+  channel_a->update_pattern();
+  if ( channel_a->coyote_power > 0 && channel_a->wavemode != M_NONE ) {
+    auto enc = encode_pattern(channel_a->pattern);
     if (!patternACharacteristic->writeValue(enc))
       Serial.println("Failed to write pattern A");
   }
+
   // Do WaveB
-  if (coyote_powerB > 0 && wavemodeb != 0) {
-    switch ( wavemodeb ) {
-      case M_BREATH:
-        pattern_b = coyote_mode_breath(waveclockb);
-        break;
-    }
-    auto enc = encode_pattern(pattern_b);
-    if (!patternBCharacteristic->writeValue(enc)) {
+  channel_b->update_pattern();
+  if ( channel_b->coyote_power > 0 && channel_b->wavemode != M_NONE ) {
+    auto enc = encode_pattern(channel_b->pattern);
+    if (!patternBCharacteristic->writeValue(enc))
       Serial.println("Failed to write pattern B");
-    }
   }
 }
 
@@ -195,7 +175,7 @@ void Coyote::connected_callback() {
 void Coyote::disconnected_callback() {
     coyote_connected = false;
     xTimerStop(coyoteTimer, 0);
-    //bleClient->deleteServices();
+    bleClient->deleteServices();
     //NimBLEDevice::deleteClient(bleClient);
     //bleClient = nullptr;
     Serial.println("Client onDisconnect");
@@ -268,6 +248,8 @@ void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size
 }
 
 Coyote::Coyote() {
+  channel_a = std::unique_ptr<CoyoteChannel>(new CoyoteChannel(this, "a"));
+  channel_b = std::unique_ptr<CoyoteChannel>(new CoyoteChannel(this, "b"));
 }
 
 Coyote::~Coyote() {
@@ -342,15 +324,15 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   if (patternAData.size() < 3 || patternBData.size() < 3) {
     Serial.println("No pattern data?");
   }
-  pattern_a = parse_pattern({patternAData.begin(), patternAData.end()});
-  pattern_b = parse_pattern({patternBData.begin(), patternBData.end()});
+  channel_a->pattern = parse_pattern({patternAData.begin(), patternAData.end()});
+  channel_b->pattern = parse_pattern({patternBData.begin(), patternBData.end()});
 
-  auto buf = encode_power(start_powerA, start_powerB);
+  auto buf = encode_power(start_power, start_power);
   if (!powerCharacteristic->writeValue(buf))
     Serial.println("Failed to write powerCharacteristic");
 
-  wavemodea = M_NONE;
-  wavemodeb = M_NONE;
+  channel_a->wavemode = M_NONE;
+  channel_b->wavemode = M_NONE;
 
   if (!coyoteTimer) {
     coyoteTimer = xTimerCreate(nullptr, pdMS_TO_TICKS(100), true, nullptr, coyote_timer_callback);

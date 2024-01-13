@@ -3,7 +3,7 @@
 
 #include "coyote.h"
 
-coyote_pattern coyote_mode_breath(short &waveclock) {
+coyote_pattern coyote_mode_breath(uint32_t &waveclock, uint32_t &cyclecount) {
   // like the 'breathe' mode (1100mS cycle)
   coyote_pattern out;
   //instead of settting up an array like this, let's write it as a formula

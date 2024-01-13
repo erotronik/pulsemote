@@ -104,10 +104,10 @@ void update_display_if_needed() {
   lcd.setCursor(28 - 12, 75 - 30);
   if (coyote_controller->get_isconnected()) {
     lcd.setFont(&fonts::Font4);
-    lcd.printf("%02d", coyote_controller->get_powera_pc());
+    lcd.printf("%02d", coyote_controller->chan_a()->get_power_pc());
     lcd.setFont(NULL);
     lcd.setCursor(28 - 14, 105);
-    lcd.printf("%s", modes[coyote_controller->get_modea()].c_str());
+    lcd.printf("%s", modes[coyote_controller->chan_a()->get_mode()].c_str());
   }
   //else
   // lcd.printf("   ");
@@ -124,10 +124,10 @@ void update_display_if_needed() {
   lcd.setCursor(320 - 90 + 28 - 12, 75 - 30);
   if (coyote_controller->get_isconnected()) {
     lcd.setFont(&fonts::Font4);
-    lcd.printf("%02d", coyote_controller->get_powerb_pc());
+    lcd.printf("%02d", coyote_controller->chan_b()->get_power_pc());
     lcd.setFont(NULL);
     lcd.setCursor(320 - 90 + 28 - 14, 105);
-    lcd.printf("%s", modes[coyote_controller->get_modeb()].c_str());
+    lcd.printf("%s", modes[coyote_controller->chan_b()->get_mode()].c_str());
   }
   //else
   //  lcd.printf("   ") ;
@@ -146,7 +146,7 @@ void update_display_if_needed() {
   if (coyote_controller->get_isconnected()) {
     if (mode_now == 0) {
       lcd.setCursor(100 + 30, 70);
-      lcd.printf("%s", modes[coyote_controller->get_modea()].c_str());
+      lcd.printf("%s", modes[coyote_controller->chan_a()->get_mode()].c_str());
     }
     if (mode_now == 1) {
       lcd.setCursor(100 + 30, 70);
@@ -257,12 +257,14 @@ void handle_random_mode() {
   if (mode_now != 2) return;
   if (millis() > random_timer) {
     Serial.println("Random time to switch");
-    if (coyote_controller->get_modea() == M_NONE) {
+    if (coyote_controller->chan_a()->get_mode() == M_NONE) {
       random_timer = millis() + random(10000, 30000);  // On time is 10-30 seconds
-      coyote_controller->put_setmode(M_BREATH, M_BREATH);
+      coyote_controller->chan_a()->put_setmode(M_BREATH);
+      coyote_controller->chan_b()->put_setmode(M_BREATH);
     } else {
       random_timer = millis() + random(30000, 50000);  // Off time is 30-50 seconds
-      coyote_controller->put_setmode(M_NONE, M_NONE);
+      coyote_controller->chan_a()->put_setmode(M_NONE);
+      coyote_controller->chan_b()->put_setmode(M_NONE);
     }
   }
   if (millis() > random_display_refresh + 500) {  // update the display every .5 seconds with countdown
@@ -299,24 +301,26 @@ void handle_buttons() {
       }
       Serial.printf("Set mode %d\n", mode_now);
       if (mode_now == 1) {
-        coyote_controller->put_setmode(M_BREATH, M_BREATH);
+        coyote_controller->chan_a()->put_setmode(M_BREATH);
+        coyote_controller->chan_b()->put_setmode(M_BREATH);
         update_display(false);
       } else {
-        coyote_controller->put_setmode(M_NONE, M_NONE);
+        coyote_controller->chan_a()->put_setmode(M_NONE);
+        coyote_controller->chan_b()->put_setmode(M_NONE);
         update_display(false);
       }
     }
   } else if (select_state == STATE_A) {
     if (b == 2) {
-      coyote_controller->put_powerup(-1, 0);
+      coyote_controller->chan_a()->put_power_diff(-1);
     } else if (b == 3) {
-      coyote_controller->put_powerup(1, 0);
+      coyote_controller->chan_a()->put_power_diff(1);
     }
   } else if (select_state == STATE_B) {
     if (b == 2) {
-      coyote_controller->put_powerup(0, -1);
+      coyote_controller->chan_b()->put_power_diff(-1);
     } else if (b == 3) {
-      coyote_controller->put_powerup(0, 1);
+      coyote_controller->chan_b()->put_power_diff(1);
     }
   }
 }
