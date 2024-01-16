@@ -11,8 +11,11 @@ to make your own hardware.
 
 ## Notes
 
-* The current code is for Arduino IDE and a M5Stack Core controller (one
-that has 3 physical buttons). But it should be possible to alter it
+* This is a fork of the project at https://github.com/erotronik/pulsemote.
+This fork adds support for the M5Stack Core2, as well as an additional pattern.
+
+* The current code is for [PlatformIO](https://platformio.org/) and a M5Stack
+Core or Core2 controller. But it should be possible to alter it
 for anything based on an ESP-32 with a display and at least 3 buttons.
 
 * The DG-Labs 2.0 box has no authentication or pairing, so if you use
@@ -21,9 +24,9 @@ with the app (or a box like this one) can take control of it if it's
 not connected to any other client at the time. Make sure you've connected
 to the right box!
 
-* The current code just has one mode, a copy of the apps "breath", and
-you can turn it on and off or set it to a random on/off mode. More in the
-future.
+* The current code has two modes, a copy of the apps "breath", and a custom
+"waves" mode. You can turn it on and off or set it to a random on/off mode.
+More in the future.
 
 ## Instructions for use
 
@@ -35,7 +38,14 @@ future.
 ## Requirements
 
 * A DG-Labs 2.0 box
-* A M5Stack Core controller
-* Install the M5Stack board support and M5Stack library
-* Install the NimBLE library (used for bluetooth)
-* Install the LovyanGFX library (used for the GUI)
+* A M5Stack Core or Core2 controller
+* An installation of [PlatformIO Core](https://docs.platformio.org/en/stable/core/index.html) - or PlatformIO for your favorite IDE.
+
+When using PlatformIO Core, go to the source directory in your terminal and execute:
+
+```
+# For M5stack core:
+pio run -e m5stack-core -t upload
+# For M5stack core2:
+pio run -e m5stack-core2 -t upload
+```
