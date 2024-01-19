@@ -45,9 +45,10 @@ bool Coyote::get_isconnected() {
 // go up or down in steps of 1%, but never above 70% of max
 void CoyoteChannel::put_power_diff(short change) {
   if (change > 5) return;  // max 5% in one go, sanity check
-  int pc = parent->coyote_maxPower / 100;
-  int max = parent->coyote_maxPower * .70;  // HARD LIMIT HERE just for sanity
-  if (change < 0 && coyote_power_wanted < -change * pc) return;
+  int pc = (parent->coyote_maxPower / 100);
+  int max = parent->coyote_maxPower;
+  if (change < 0 && coyote_power_wanted < -change * pc)
+    return;
   coyote_power_wanted += change * pc;
   if (coyote_power_wanted > max) {
     coyote_power_wanted = max;
@@ -55,7 +56,18 @@ void CoyoteChannel::put_power_diff(short change) {
 }
 
 int CoyoteChannel::get_power_pc() const {
-  return int(coyote_power * 100 / parent->coyote_maxPower);
+  return int((coyote_power * 100 / parent->coyote_maxPower));
+}
+
+// go to a specific percentage. Be careful about this...
+void CoyoteChannel::put_power_pc(short power_percent) {
+  if (power_percent<0 || power_percent > 100)
+    return;
+  coyote_power_wanted = (parent->coyote_maxPower * power_percent)/100;
+
+  if (coyote_power_wanted > parent->coyote_maxPower) {
+    coyote_power_wanted = parent->coyote_maxPower;
+  }
 }
 
 uint8_t Coyote::get_batterylevel() {
@@ -313,8 +325,11 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
 
   auto configData = configCharacteristic->readValue();
   coyote_maxPower = (configData[2] & 0xf) * 256 + configData[1];
-  coyote_powerStep = configData[0];
+  // scale the max power to what we want it to be...
   Serial.printf("coyote maxPower: %d\n", coyote_maxPower);
+  coyote_maxPower *= (double)coyote_max_power_percent/100;
+  Serial.printf("coyote maxPower clamped to: %d\n", coyote_maxPower);
+  coyote_powerStep = configData[0];
   Serial.printf("coyote powerStep: %d\n", coyote_powerStep);
 
   auto powerData = powerCharacteristic->readValue();
