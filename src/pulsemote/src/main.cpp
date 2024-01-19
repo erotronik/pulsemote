@@ -1,12 +1,15 @@
 // Save power by setting the CPU Frequency lower, 160MHz for example
-#include <Arduino.h>
-
 #include <M5Unified.h>
 #include <memory>
 
 #include "coyote.h"
 #include "comms.h"
 
+#include <freertos/task.h>
+
+extern "C" {
+void app_main();
+}
 
 static M5GFX lcd;
 std::unique_ptr<Coyote> coyote_controller;
@@ -15,6 +18,20 @@ bool need_display_clear = false;
 bool need_display_update = false;
 bool need_display_timer_update = false;
 coyote_type_of_change last_change = C_NONE;
+
+uint32_t millis() {
+  return esp_timer_get_time()/1000;
+}
+
+int random_range(int min, int max){
+    int n = max - min + 1;
+    int remainder = RAND_MAX % n;
+    int x;
+    do{
+        x = rand();
+    }while (x >= RAND_MAX - remainder);
+    return min + x % n;
+}
 
 void update_display(bool clear_display) {
   if ( clear_display )
@@ -179,12 +196,12 @@ void update_display_if_needed() {
   }
 }
 
-byte button, oldbutton = 0;
+uint8_t button, oldbutton = 0;
 unsigned long repeatbutton = 0;
 unsigned short rcount = 0;
 
 // A = 1, B = 2, C = 3
-bool get_individual_button_state(byte button) {
+bool get_individual_button_state(uint8_t button) {
   switch ( button ) {
     case 1:
       return M5.BtnA.isPressed();
@@ -197,7 +214,7 @@ bool get_individual_button_state(byte button) {
   }
 }
 
-byte get_button() {
+uint8_t get_button() {
   button = 0;
   if (get_individual_button_state(1))
     button = 1;
@@ -216,9 +233,9 @@ byte get_button() {
   }
   
   // If you hold a button more than XmS then it'll repeat every YmS, but only for 10 times, so you can't end up with your finger stuck on +
-  unsigned short startrepeatpress;
-  unsigned short maxrepeats;
-  unsigned short continuerepeatpress;
+  unsigned short startrepeatpress = 0;
+  unsigned short maxrepeats = 0;
+  unsigned short continuerepeatpress = 0;
 
   if (button ==3) {  // +
     startrepeatpress = 400;
@@ -256,13 +273,13 @@ byte get_button() {
 void handle_random_mode() {
   if (mode_now != 3) return;
   if (millis() > random_timer) {
-    Serial.println("Random time to switch");
+    ESP_LOGD("main", "Random time to switch");
     if (coyote_controller->chan_a()->get_mode() == M_NONE) {
-      random_timer = millis() + random(10000, 30000);  // On time is 10-30 seconds
+      random_timer = millis() + random_range(10000, 30000);  // On time is 10-30 seconds
       coyote_controller->chan_a()->put_setmode(M_BREATH);
       coyote_controller->chan_b()->put_setmode(M_BREATH);
     } else {
-      random_timer = millis() + random(30000, 50000);  // Off time is 30-50 seconds
+      random_timer = millis() + random_range(30000, 50000);  // Off time is 30-50 seconds
       coyote_controller->chan_a()->put_setmode(M_NONE);
       coyote_controller->chan_b()->put_setmode(M_NONE);
     }
@@ -284,7 +301,7 @@ void coyote_change_handler(coyote_type_of_change t) {
 }
 
 void handle_buttons() {
-  byte b = get_button();
+  auto b = get_button();
   if (b == 1) {
     select_state++;
     if (select_state >= STATE_LAST) {
@@ -299,7 +316,7 @@ void handle_buttons() {
       if (mode_now >= modes.size()) {
         mode_now = 0;
       }
-      Serial.printf("Set mode %d\n", mode_now);
+      ESP_LOGD("main", "Set mode %d\n", mode_now);
       if (mode_now == 1) {
         coyote_controller->chan_a()->put_setmode(M_BREATH);
         coyote_controller->chan_b()->put_setmode(M_BREATH);
@@ -339,9 +356,9 @@ void main_loop() {
   handle_buttons();
   handle_random_mode();
 
-  comms_uart_colorpicker();
+  //comms_uart_colorpicker();
   update_display_if_needed();
-  delay(10);
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void TaskMain(void *pvParameters) {
@@ -359,7 +376,7 @@ void TaskScan(void *pvParameters) {
   }
 }
 
-void setup() {
+void app_main() {
   auto cfg = M5.config();
   M5.begin(cfg);
 
@@ -370,12 +387,11 @@ void setup() {
   lcd.clearDisplay();
   lcd.setTextSize(2);
 
-  delay(100);
+  vTaskDelay(pdMS_TO_TICKS(100));
   coyote_controller = std::unique_ptr<Coyote>(new Coyote());
   coyote_controller->set_callback(coyote_change_handler);
-  comms_init(0);
 
   xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);
-  xTaskCreate(TaskScan, "Scan", 10000, nullptr, 2, nullptr);
+  xTaskCreatePinnedToCore(TaskScan, "Scan", 10000, nullptr, 2, nullptr, 0);
   need_display_update = true;
 }

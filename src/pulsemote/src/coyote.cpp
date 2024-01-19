@@ -8,6 +8,9 @@
 
 #include "coyote.h"
 #include "coyote-modes.h"
+#include <esp_log.h>
+#include <map>
+#include <freertos/timers.h>
 
 constexpr uint8_t COYOTE_SERVICE_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x0b, 0x18, 0x5a, 0x95 };
 constexpr uint8_t CONFIG_CHAR_UUID[] = { 0xad, 0xe8, 0xf3, 0xd4, 0xb8, 0x84, 0x94, 0xa0, 0xaa, 0xf5, 0xe2, 0x0f, 0x07, 0x15, 0x5a, 0x95 };
@@ -32,7 +35,7 @@ CoyoteChannel::CoyoteChannel(Coyote* c, std::string name) : parent(c), channel_n
 bool Coyote::is_coyote(NimBLEAdvertisedDevice* advertisedDevice) {
   auto ble_manufacturer_specific_data = advertisedDevice->getManufacturerData();
   if (ble_manufacturer_specific_data.length() > 2 && ble_manufacturer_specific_data[1] == 0x19 && ble_manufacturer_specific_data[0] == 0x96) {
-    Serial.printf("Found DG-LAB\n");
+    ESP_LOGI("coyote", "Found DG-LAB");
     return true;
   }
   return false;
@@ -65,7 +68,7 @@ uint8_t Coyote::get_batterylevel() {
 void CoyoteChannel::put_setmode(coyote_mode mode) {
   wanted_mode = mode;
   wavemode_changed = true;
-  Serial.printf("Set WaveMode %s %d\n", channel_name.c_str(), mode);
+  ESP_LOGD("coyote", "Set WaveMode %s %d\n", channel_name.c_str(), mode);
 }
 
 void Coyote::set_callback(coyote_callback c) {
@@ -81,7 +84,7 @@ void Coyote::parse_power(const std::vector<uint8_t> buf) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
   channel_a->coyote_power = (buf[2] * 256 + buf[1]) >> 3;
   channel_b->coyote_power = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
-  Serial.printf("coyote power A=%d (%d%%) B=%d (%d%%)\n", channel_a->coyote_power, int(channel_a->coyote_power * 100 / coyote_maxPower), channel_b->coyote_power, int(channel_b->coyote_power * 100 / coyote_maxPower));
+  ESP_LOGD("coyote", "coyote power A=%d (%d%%) B=%d (%d%%)", channel_a->coyote_power, int(channel_a->coyote_power * 100 / coyote_maxPower), channel_b->coyote_power, int(channel_b->coyote_power * 100 / coyote_maxPower));
 }
 
 std::vector<uint8_t> Coyote::encode_power(int xpowerA, int xpowerB) {
@@ -90,7 +93,7 @@ std::vector<uint8_t> Coyote::encode_power(int xpowerA, int xpowerB) {
   buf[2] = (xpowerA & 0b11111100000) >> 5;
   buf[1] = (xpowerA & 0b11111) << 3 | (xpowerB & 0b11100000000) >> 8;
   buf[0] = xpowerB & 0xff;
-  Serial.printf("coyote power A=%d B=%d\n", xpowerA, xpowerB);
+  ESP_LOGD("coyote", "coyote power A=%d B=%d", xpowerA, xpowerB);
   return buf;
 }
 
@@ -119,7 +122,7 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
     auto instance = coyote_timer_map.at(xTimerID);
     instance->timer_callback(xTimerID);
   } catch ( const std::out_of_range& e ) {
-    Serial.println("Could not find timer callback instance");
+    ESP_LOGE("coyote", "Could not find timer callback instance");
   }
 }
 
@@ -139,6 +142,9 @@ void CoyoteChannel::update_pattern() {
       case M_WAVES:
         pattern = coyote_mode_waves(waveclock, cyclecount);
         break;
+      case M_NONE:
+        pattern = coyote_pattern{};
+        break;
     }
   }
 }
@@ -153,14 +159,14 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
   if (channel_a->coyote_power != channel_a->coyote_power_wanted || channel_b->coyote_power != channel_b->coyote_power_wanted) {
     auto enc = encode_power(channel_a->coyote_power_wanted, channel_b->coyote_power_wanted);
     if (!powerCharacteristic->writeValue(enc))
-      Serial.printf("Failed to write power %u %u %u\n", enc[0], enc[1], enc[2]);
+      ESP_LOGE("coyote", "Failed to write power %u %u %u\n", enc[0], enc[1], enc[2]);
   }
   // Do WaveA
   channel_a->update_pattern();
   if ( channel_a->coyote_power > 0 && channel_a->wavemode != M_NONE ) {
     auto enc = encode_pattern(channel_a->pattern);
     if (!patternACharacteristic->writeValue(enc))
-      Serial.println("Failed to write pattern A");
+      ESP_LOGE("coyote", "Failed to write pattern A");
   }
 
   // Do WaveB
@@ -168,21 +174,21 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
   if ( channel_b->coyote_power > 0 && channel_b->wavemode != M_NONE ) {
     auto enc = encode_pattern(channel_b->pattern);
     if (!patternBCharacteristic->writeValue(enc))
-      Serial.println("Failed to write pattern B");
+      ESP_LOGE("coyote", "Failed to write pattern B");
   }
 }
 
 void Coyote::connected_callback() {
-    Serial.println("Client onConnect");
+    ESP_LOGD("coyote", "Client onConnect");
 }
 
-void Coyote::disconnected_callback() {
+void Coyote::disconnected_callback(int reason) {
     coyote_connected = false;
     xTimerStop(coyoteTimer, 0);
     bleClient->deleteServices();
     //NimBLEDevice::deleteClient(bleClient);
     //bleClient = nullptr;
-    Serial.println("Client onDisconnect");
+    ESP_LOGI("coyote", "Client onDisconnect reason: %d", reason);
     notify(C_DISCONNECTED);
 }
 
@@ -196,8 +202,8 @@ public:
     coyote_instance->connected_callback();
   }
 
-  void onDisconnect(NimBLEClient* pclient) {
-    coyote_instance->disconnected_callback();
+  void onDisconnect(NimBLEClient* pclient, int reason) {
+    coyote_instance->disconnected_callback(reason);
   }
 
 private:
@@ -205,22 +211,20 @@ private:
 };
 
 bool Coyote::getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
-  Serial.printf("Getting service %s\n", uuid.toString().c_str());
+  ESP_LOGD("coyote", "Getting service %s\n", uuid.toString().c_str());
   service = bleClient->getService(uuid);
   if (service == nullptr) {
-    Serial.print("Failed to find service UUID: ");
-    Serial.println(uuid.toString().c_str());
+    ESP_LOGE("coyote", "Failed to find service UUID: %s", uuid.toString().c_str());
     return false;
   }
   return true;
 }
 
 bool getCharacteristic(NimBLERemoteService* service, NimBLERemoteCharacteristic*& c, NimBLEUUID uuid, notify_callback notifyCallback = nullptr) {
-  Serial.printf("Getting characteristic %s\n", uuid.toString().c_str());
+  ESP_LOGD("coyote", "Getting characteristic %s\n", uuid.toString().c_str());
   c = service->getCharacteristic(uuid);
   if (c == nullptr) {
-    Serial.print("Failed to find characteristic UUID: ");
-    Serial.println(uuid.toString().c_str());
+    ESP_LOGE("coyote", "Failed to find characteristic UUID: %s", uuid.toString().c_str());
     return false;
   }
 
@@ -231,15 +235,14 @@ bool getCharacteristic(NimBLERemoteService* service, NimBLERemoteCharacteristic*
   if (c->canNotify() && c->subscribe(true, notifyCallback))
     return true;
   else {
-    Serial.print("Failed to register for notifications for characteristic UUID: ");
-    Serial.println(uuid.toString().c_str());
+    ESP_LOGE("coyote", "Failed to register for notifications for characteristic UUID: %s", uuid.toString().c_str());
     return false;
   }
 }
 
 void Coyote::batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
   coyote_batterylevel = data[0];
-  Serial.printf("coyote batterycb: %d\n", coyote_batterylevel);
+  ESP_LOGD("coypte", "coyote batterycb: %d", coyote_batterylevel);
 }
 
 void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify) {
@@ -248,7 +251,7 @@ void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size
     notify(C_POWER);
   }
   else
-    Serial.println("Power callback with incorrect length");
+    ESP_LOGE("coyote", "Power callback with incorrect length");
 }
 
 Coyote::Coyote() {
@@ -276,19 +279,19 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
 
   notify(C_CONNECTING);
 
-  Serial.printf("Will try to connect to Coyote at %s\n", coyote_device->getAddress().toString().c_str());
+  ESP_LOGI("coyote", "Will try to connect to Coyote at %s\n", coyote_device->getAddress().toString().c_str());
   if (!bleClient->connect(coyote_device)) {
-    Serial.println("Connection failed");
+    ESP_LOGE("coyote", "Connection failed");
     return false;
   }
-  Serial.println("Connection established");
+  ESP_LOGI("coyote", "Connection established");
 
   bool res = true;
   res &= getService(coyoteService, COYOTE_SERVICE_BLEUUID);
   res &= getService(batteryService, BATTERY_SERVICE_BLEUUID);
 
   if (res == false) {
-    Serial.println("Missing service");
+    ESP_LOGE("coyote", "Missing service");
     bleClient->disconnect();
     return false;
   }
@@ -300,40 +303,40 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   res &= getCharacteristic(coyoteService, patternBCharacteristic, B_CHAR_BLEUUID);
 
   if (res == false) {
-    Serial.println("Missing characteristic");
+    ESP_LOGE("coyote", "Missing characteristic");
     bleClient->disconnect();
     return false;
   }
 
-  Serial.println("Found services and characteristics");
+  ESP_LOGI("coyote", "Found services and characteristics");
   coyote_connected = true;
 
   coyote_batterylevel = batteryLevelCharacteristic->readValue<uint8_t>();
-  Serial.printf("Battery level: %u\n", coyote_batterylevel);
+  ESP_LOGD("coyote", "Battery level: %u\n", coyote_batterylevel);
 
   auto configData = configCharacteristic->readValue();
   coyote_maxPower = (configData[2] & 0xf) * 256 + configData[1];
   coyote_powerStep = configData[0];
-  Serial.printf("coyote maxPower: %d\n", coyote_maxPower);
-  Serial.printf("coyote powerStep: %d\n", coyote_powerStep);
+  ESP_LOGD("coyote", "coyote maxPower: %d\n", coyote_maxPower);
+  ESP_LOGD("coyote", "coyote powerStep: %d\n", coyote_powerStep);
 
   auto powerData = powerCharacteristic->readValue();
   if (powerData.size() >= 3)
     parse_power({powerData.begin(), powerData.end()});
 
-  Serial.printf("read pattern a\n");
+  ESP_LOGD("coyote", "read pattern a\n");
   auto patternAData = patternACharacteristic->readValue();
-  Serial.printf("read pattern b\n");
+  ESP_LOGD("coyote", "read pattern b\n");
   auto patternBData = patternBCharacteristic->readValue();
   if (patternAData.size() < 3 || patternBData.size() < 3) {
-    Serial.println("No pattern data?");
+    ESP_LOGE("coyote", "No pattern data?");
   }
   channel_a->pattern = parse_pattern({patternAData.begin(), patternAData.end()});
   channel_b->pattern = parse_pattern({patternBData.begin(), patternBData.end()});
 
   auto buf = encode_power(start_power, start_power);
   if (!powerCharacteristic->writeValue(buf))
-    Serial.println("Failed to write powerCharacteristic");
+    ESP_LOGE("coyote", "Failed to write powerCharacteristic");
 
   channel_a->wavemode = M_NONE;
   channel_b->wavemode = M_NONE;
@@ -344,7 +347,7 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   }
   xTimerStart(coyoteTimer, 0);
 
-  Serial.println("coyote connected");
+  ESP_LOGI("coyote", "coyote connected");
   notify(C_CONNECTED);
   return true;
 }

@@ -2,6 +2,8 @@
 // https://github.com/OpenDGLab/OpenDGLab-Connect/blob/master/src/services/DGLab.js
 
 #include "coyote.h"
+#include <math.h>
+#include <cmath>
 
 coyote_pattern coyote_mode_breath(uint32_t &waveclock, uint32_t &cyclecount) {
   // like the 'breathe' mode (1100mS cycle)

@@ -1,22 +1,23 @@
-#include "Arduino.h"
 #include "coyote.h"
 
 #include <NimBLEDevice.h>
 #include <memory>
+#include <esp_log.h>
 
 NimBLEServer *pServer = nullptr;
 NimBLECharacteristic * pTxCharacteristic;
 NimBLEScan* pBLEScan;
 
+bool has_init = false;
 bool device_connected = false;
-int scanTime = 5; // In seconds
+int scanTime = 5 * 1000; // In ms
 
 NimBLEAdvertisedDevice* coyote_device = nullptr;
 extern std::unique_ptr<Coyote> coyote_controller;
 
-class PulsemoteAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+class PulsemoteAdvertisedDeviceCallbacks: public NimBLEScanCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-      //Serial.printf("Advertised Device: %s \n", advertisedDevice->toString().c_str());
+      ESP_LOGD("comms", "Advertised Device: %s", advertisedDevice->toString().c_str());
       if (Coyote::is_coyote(advertisedDevice)) {
         // can't connect while scanning is going on - it locks up everything.
         coyote_device = new NimBLEAdvertisedDevice(*advertisedDevice);
@@ -29,20 +30,26 @@ void comms_init(short myid) {
   NimBLEDevice::init("x");
   NimBLEDevice::setPower(ESP_PWR_LVL_P6, ESP_BLE_PWR_TYPE_ADV); // send advertisements with 6 dbm
   pBLEScan = NimBLEDevice::getScan(); // create new scan
-  pBLEScan->setAdvertisedDeviceCallbacks(new PulsemoteAdvertisedDeviceCallbacks());
-  pBLEScan->setActiveScan(false); // active scan uses more power, but get results faster
+  pBLEScan->setScanCallbacks(new PulsemoteAdvertisedDeviceCallbacks());
+  pBLEScan->setActiveScan(true); // active scan uses more power, but get results faster
   pBLEScan->setInterval(250);
   pBLEScan->setWindow(125);  // less or equal setInterval value
-  Serial.println("Started ble scanning");
+  ESP_LOGD("comms", "Started ble scanning");
+  has_init = true;
 }
 
 void comms_stop_scan() {
-  Serial.println("Stopped ble scanning");
+  ESP_LOGI("comms", "Stopped ble scanning");
 }
 
 void scan_loop() {
+  if ( !has_init ) {
+    comms_init(0);
+  }
+
   if ( !coyote_controller || !coyote_controller->get_isconnected() ) {
-    NimBLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+    ESP_LOGI("comms", "Scanning");
+    pBLEScan->start(scanTime, false);
 
     pBLEScan->clearResults();   // delete results fromBLEScan buffer to release memory
 
@@ -51,12 +58,14 @@ void scan_loop() {
       delete coyote_device;
       coyote_device = nullptr;      
     }
+    vTaskDelay(pdMS_TO_TICKS(1000));
   } else {
     // everything is happening in callbacks / timers
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
+/*
 void comms_uart_colorpicker(void) {
   if (Serial.available()<1)
     return;
@@ -71,4 +80,4 @@ void comms_uart_colorpicker(void) {
       delay(100);
       ESP.restart();
   }
-}
+} */

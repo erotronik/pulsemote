@@ -81,7 +81,7 @@ private:
 
     // called when connection/disconnection is signalled
     void connected_callback();
-    void disconnected_callback();
+    void disconnected_callback(int reason);
     void notify(coyote_type_of_change);
 
     uint8_t coyote_powerStep = 0;
