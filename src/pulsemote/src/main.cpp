@@ -4,6 +4,7 @@
 
 #include "coyote.h"
 #include "comms.h"
+#include "M5_ANGLE8.h"
 
 #include <freertos/task.h>
 
@@ -18,6 +19,9 @@ bool need_display_clear = false;
 bool need_display_update = false;
 bool need_display_timer_update = false;
 coyote_type_of_change last_change = C_NONE;
+
+M5_ANGLE8 angle8;
+bool have_angle8 = false;
 
 uint32_t millis() {
   return esp_timer_get_time()/1000;
@@ -350,9 +354,37 @@ void handle_buttons() {
 void loop() {
 }
 
+// if we have an angle8 attached, let's up
+void update_dials() {
+  static uint8_t channel1_orig = 0;
+  static uint8_t channel2_orig = 0;
+  bool changed = false;
+
+  auto r1 = angle8.getDialPercent(1, true);
+  auto r2 = angle8.getDialPercent(2, true);
+
+  if (channel1_orig!=r1) {
+    Serial.printf("Updating chanA from %u to %u\n", channel1_orig, r1);
+    channel1_orig = r1;
+    coyote_controller->chan_a()->put_power_pc(r1);
+    changed = true;
+  }
+  if (channel2_orig!=r2) {
+    Serial.printf("Updating chanB from %u to %u\n", channel2_orig, r2);
+    channel2_orig = r2;
+    coyote_controller->chan_b()->put_power_pc(r2);
+    changed = true;
+  }
+  if (changed)
+    update_display(false);
+}
+
 void main_loop() {
   M5.update();
 
+  if (have_angle8)
+    update_dials();
+  
   handle_buttons();
   handle_random_mode();
 
@@ -379,6 +411,13 @@ void TaskScan(void *pvParameters) {
 void app_main() {
   auto cfg = M5.config();
   M5.begin(cfg);
+
+  // check if we have an angle8 controller attached
+  if ( angle8.begin(ANGLE8_I2C_ADDR) ) {
+    Serial.println("Found angle8");
+    Serial.printf("Firmware version: %s\n", String(angle8.getVersion()).c_str());
+    have_angle8 = true;
+  }
 
   lcd.init();
   lcd.setRotation(1);

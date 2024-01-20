@@ -8,6 +8,10 @@
 class CoyoteNimBLEClientCallback;
 class Coyote;
 
+// The maximum outut is quite high. Limit to x% instead and adjust all display and set
+// options respectively
+constexpr int coyote_max_power_percent = 50;
+
 enum coyote_mode { M_NONE, M_BREATH, M_WAVES };
 enum coyote_type_of_change { C_NONE, C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTING, C_CONNECTED };
 typedef std::function<void (coyote_type_of_change change)> coyote_callback;
@@ -21,6 +25,8 @@ struct coyote_pattern {
 class CoyoteChannel {
 public:
     void put_power_diff(short);
+    // change output power directly. Be careful with this.
+    void put_power_pc(short);
     int get_power_pc() const;
     coyote_mode get_mode() const { return wanted_mode; }
     void put_setmode(coyote_mode);
