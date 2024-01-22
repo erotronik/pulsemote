@@ -364,13 +364,13 @@ void update_dials() {
   auto r2 = angle8.getDialPercent(2, true);
 
   if (channel1_orig!=r1) {
-    Serial.printf("Updating chanA from %u to %u\n", channel1_orig, r1);
+    ESP_LOGD("main", "Updating chanA from %u to %u", channel1_orig, r1);
     channel1_orig = r1;
     coyote_controller->chan_a()->put_power_pc(r1);
     changed = true;
   }
   if (channel2_orig!=r2) {
-    Serial.printf("Updating chanB from %u to %u\n", channel2_orig, r2);
+    ESP_LOGD("main", "Updating chanB from %u to %u", channel2_orig, r2);
     channel2_orig = r2;
     coyote_controller->chan_b()->put_power_pc(r2);
     changed = true;
@@ -413,9 +413,9 @@ void app_main() {
   M5.begin(cfg);
 
   // check if we have an angle8 controller attached
-  if ( angle8.begin(ANGLE8_I2C_ADDR) ) {
-    Serial.println("Found angle8");
-    Serial.printf("Firmware version: %s\n", String(angle8.getVersion()).c_str());
+  if ( angle8.begin() ) {
+    ESP_LOGI("main", "Found angle8");
+    ESP_LOGD("main", "Firmware version: %u\n", angle8.getVersion());
     have_angle8 = true;
   }
 

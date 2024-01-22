@@ -32,68 +32,74 @@ Modifications licensed under project Apache2 license.
 
 /*! @brief Initialize the ANGLE8.
     @return True if the init was successful, otherwise false.. */
-bool M5_ANGLE8::begin(uint8_t addr) {
-    _wire = &Wire;
-    _addr = addr;
-    _wire->begin();
-    delay(10);
-    _wire->beginTransmission(_addr);
-    uint8_t error = _wire->endTransmission();
-    if (error == 0) {
-        return true;
-    } else {
-        return false;
-    }
+bool M5_ANGLE8::begin() {
+    bool res = true;
+    res |= _i2c->start(_addr, false, _freq);
+    res |= _i2c->stop();
+    return res;
 }
 
 /*! @brief Write a certain length of data to the specified register address.
     @return True if the write was successful, otherwise false.. */
-bool M5_ANGLE8::writeBytes(uint8_t addr, uint8_t reg, uint8_t *buffer,
-                           uint8_t length) {
-    _wire->beginTransmission(addr);
-    _wire->write(reg);
-    for (uint8_t i = 0; i < length; i++) {
-        _wire->write(*(buffer + i));
-    }
-    _wire->endTransmission();
-    return true;
-    //    return false;
+bool M5_ANGLE8::writeRegister(uint8_t reg, uint8_t *buffer, uint8_t length) {
+    bool res = true;
+    res |= _i2c->start(_addr, false, _freq);
+    res |= _i2c->write(reg);
+    res |= _i2c->write(buffer, 4);
+    res |= _i2c->stop();
+    return res;
 }
 
 /*! @brief Read a certain length of data to the specified register address.
-    @return True if the read was successful, otherwise false.. */
-bool M5_ANGLE8::readBytes(uint8_t addr, uint8_t reg, uint8_t *buffer,
-                          uint8_t length) {
-    uint8_t index = 0;
-    _wire->beginTransmission(addr);
-    _wire->write(reg);
-    _wire->endTransmission();
-    if (_wire->requestFrom(addr, length)) {
-        for (uint8_t i = 0; i < length; i++) {
-            buffer[index++] = _wire->read();
-        }
-        return true;
+    @return True if the write was successful, otherwise false. */
+bool M5_ANGLE8::readRegister(uint8_t reg, uint8_t *buffer, uint8_t length) {
+    bool res = true;
+    res |= _i2c->start(_addr, false, _freq);
+    res |= _i2c->write(reg);
+    res |= _i2c->stop();
+    if (!res) {
+        ESP_LOGD("m5angle8", "Write: register address write failed");
+        return {};
     }
-    return false;
+    res |= _i2c->start(_addr, true, _freq);
+    res |= _i2c->read(buffer, length);
+    res |= _i2c->stop();
+    return res;
+}
+
+std::optional<uint8_t> M5_ANGLE8::readRegister8(uint8_t reg) {
+    bool res = true;
+    uint8_t r;
+    res |= _i2c->start(_addr, false, _freq);
+    res |= _i2c->write(reg);
+    res |= _i2c->stop();
+    if (!res) {
+        ESP_LOGD("m5angle8", "Write: register address write failed");
+        return {};
+    }
+    res |= _i2c->start(_addr, true, _freq);
+    res |= _i2c->read(&r, 1);
+    res |= _i2c->stop();
+    if (res)
+        return r;
+    return {};
 }
 
 /*! @brief Set the addr of device.
     @return True if the set was successful, otherwise false.. */
-bool M5_ANGLE8::setDeviceAddr(uint8_t addr) {
-    if (writeBytes(_addr, ANGLE8_ADDRESS_REG, &addr, 1)) {
+/* bool M5_ANGLE8::setDeviceAddr(uint8_t addr) {
+    if (writeRegister(ANGLE8_ADDRESS_REG, &addr, 1)) {
         _addr = addr;
         return true;
     } else {
         return false;
     }
-}
+} */
 
 /*! @brief Get the Version of Firmware.
     @return Firmware version */
 uint8_t M5_ANGLE8::getVersion() {
-    uint8_t data = 0;
-    readBytes(_addr, ANGLE8_FW_VERSION_REG, &data, 1);
-    return data;
+    return readRegister8(ANGLE8_FW_VERSION_REG).value_or(0);
 }
 
 /*! @brief Set the color of led lights.
@@ -106,7 +112,7 @@ bool M5_ANGLE8::setLEDColor(uint8_t ch, uint32_t color, uint8_t bright) {
     data[2]         = color & 0xff;
     data[3]         = bright & 0xff;
     uint8_t reg     = ch * 4 + ANGLE8_RGB_24B_REG;
-    return writeBytes(_addr, reg, data, 4);
+    return writeRegister(reg, data, 4);
 }
 
 /*! @brief Get digital singal input.
@@ -114,7 +120,7 @@ bool M5_ANGLE8::setLEDColor(uint8_t ch, uint32_t color, uint8_t bright) {
 bool M5_ANGLE8::getDigitalInput() {
     uint8_t data;
     uint8_t reg = ANGLE8_DIGITAL_INPUT_REG;
-    if (readBytes(_addr, reg, &data, 1)) {
+    if (readRegister(reg, &data, 1)) {
         return data;
     }
     return 0;
@@ -126,16 +132,17 @@ uint16_t M5_ANGLE8::getAnalogInput(uint8_t ch, angle8_analog_read_mode_t bit) {
     if (bit == _8bit) {
         uint8_t data;
         uint8_t reg = ch + ANGLE8_ANALOG_INPUT_8B_REG;
-        if (readBytes(_addr, reg, &data, 1)) {
+        if (readRegister(reg, &data, 1)) {
             return data;
         }
     } else {
         uint8_t data[2];
         uint8_t reg = ch * 2 + ANGLE8_ANALOG_INPUT_12B_REG;
-        if (readBytes(_addr, reg, data, 2)) {
+        if (readRegister(reg, data, 2)) {
             return (data[1] << 8) | data[0];
         }
     }
+    ESP_LOGW("m5angle8", "Reading analog input failed");
     return 0;
 }
 

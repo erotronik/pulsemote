@@ -330,7 +330,7 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   coyote_maxPower = (configData[2] & 0xf) * 256 + configData[1];
   ESP_LOGD("coyote", "coyote maxPower: %d\n", coyote_maxPower);
   coyote_maxPower *= (double)coyote_max_power_percent/100;
-  ESP_LOGD("coyote maxPower clamped to: %d\n", coyote_maxPower);
+  ESP_LOGD("coyote", "coyote maxPower clamped to: %d\n", coyote_maxPower);
   coyote_powerStep = configData[0];
   ESP_LOGD("coyote", "coyote powerStep: %d\n", coyote_powerStep);
 
