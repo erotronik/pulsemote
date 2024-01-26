@@ -18,7 +18,7 @@ struct coyote_pattern {
     int amplitude = 0; // 0-31
 };
 
-enum coyote_mode { M_NONE, M_CUSTOM, M_BREATH, M_WAVES };
+enum coyote_mode { M_NONE, M_BREATH, M_WAVES, M_CUSTOM };
 enum coyote_type_of_change { C_NONE, C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTING, C_CONNECTED };
 
 typedef std::function<void (coyote_type_of_change change)> coyote_callback;
@@ -115,5 +115,6 @@ private:
     NimBLERemoteCharacteristic* batteryLevelCharacteristic;
 
     coyote_callback update_callback;
+    bool connection_fully_established = false;
 };
 

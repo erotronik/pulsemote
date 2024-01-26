@@ -306,6 +306,8 @@ void coyote_change_handler(coyote_type_of_change t) {
     update_display(true);
     comms_stop_scan();
     return;
+  } else if ( t == C_DISCONNECTED ) {
+    mode_now = 0;
   }
   update_display(false);
 }
@@ -419,10 +421,17 @@ void TaskScan(void *pvParameters) {
   }
 }
 
+/* void check_core_dump() {
+  if (esp_core_dump_image_check() != ESP_OK)
+    return;
+} */
+
 void app_main() {
   auto cfg = M5.config();
   M5.begin(cfg);
   M5.Ex_I2C.begin();
+
+  //check_core_dump();
 
   // check if we have an angle8 controller attached
   if ( angle8.begin() ) {
@@ -442,7 +451,7 @@ void app_main() {
   coyote_controller = std::unique_ptr<Coyote>(new Coyote());
   coyote_controller->set_callback(coyote_change_handler);
 
-  xTaskCreatePinnedToCore(TaskMain, "Main", 10000, nullptr, 1, nullptr, 1);
-  xTaskCreatePinnedToCore(TaskScan, "Scan", 10000, nullptr, 2, nullptr, 0);
+  xTaskCreatePinnedToCore(TaskMain, "Main", 1024 * 10, nullptr, 1, nullptr, 1);
+  xTaskCreatePinnedToCore(TaskScan, "Scan", 1024 * 12, nullptr, 2, nullptr, 0);
   need_display_update = true;
 }

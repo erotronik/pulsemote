@@ -164,7 +164,7 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
 void CoyoteChannel::update_pattern() {
   if ((wavemode == M_NONE || waveclock == 0) && (wavemode_changed)) {
     wavemode_changed = false;
-    mode_function = std::move(wanted_mode_function);
+    mode_function = wanted_mode_function;
     waveclock = 0;
     cyclecount = 0;
     parent->notify(C_WAVEMODE_A);
@@ -205,15 +205,12 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
 }
 
 void Coyote::connected_callback() {
-    ESP_LOGD("coyote", "Client onConnect");
+    ESP_LOGI("coyote", "Client onConnect");
 }
 
 void Coyote::disconnected_callback(int reason) {
     coyote_connected = false;
     xTimerStop(coyoteTimer, 0);
-    bleClient->deleteServices();
-    //NimBLEDevice::deleteClient(bleClient);
-    //bleClient = nullptr;
     ESP_LOGI("coyote", "Client onDisconnect reason: %d", reason);
     notify(C_DISCONNECTED);
 }
@@ -304,24 +301,36 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   }
 
   notify(C_CONNECTING);
-
-  ESP_LOGI("coyote", "Will try to connect to Coyote at %s", coyote_device->getAddress().toString().c_str());
-  if (!bleClient->connect(coyote_device)) {
-    ESP_LOGE("coyote", "Connection failed");
-    return false;
-  }
-  ESP_LOGI("coyote", "Connection established");
-
   bool res = true;
-  res &= getService(coyoteService, COYOTE_SERVICE_BLEUUID);
-  res &= getService(batteryService, BATTERY_SERVICE_BLEUUID);
 
-  if (res == false) {
-    ESP_LOGE("coyote", "Missing service");
-    bleClient->disconnect();
-    return false;
+  if (connection_fully_established && coyote_device->getAddress() == bleClient->getPeerAddress()) {
+    // reconnect
+    ESP_LOGI("coyote", "trying reconnect...");
+    if (!bleClient->connect(false)) {
+      ESP_LOGE("coyote", "reconnect failed");
+      return false;
+    }
+    ESP_LOGI("coyote", "reconnect finished");
+  } else {
+    connection_fully_established = false;
+    ESP_LOGI("coyote", "Will try to connect to Coyote at %s", coyote_device->getAddress().toString().c_str());
+    if (!bleClient->connect(coyote_device)) {
+      ESP_LOGE("coyote", "Connection failed");
+      return false;
+    }
+    ESP_LOGI("coyote", "Connection established");
+
+    res &= getService(coyoteService, COYOTE_SERVICE_BLEUUID);
+    res &= getService(batteryService, BATTERY_SERVICE_BLEUUID);
+
+    if (res == false) {
+      ESP_LOGE("coyote", "Missing service");
+      bleClient->disconnect();
+      return false;
+    }
   }
   
+  // call when reconnecting to re-attach notifications
   res &= getCharacteristic(batteryService, batteryLevelCharacteristic, BATTERY_CHAR_BLEUUID, std::bind(&Coyote::batterylevel_callback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
   res &= getCharacteristic(coyoteService, configCharacteristic, CONFIG_CHAR_BLEUUID);
   res &= getCharacteristic(coyoteService, powerCharacteristic, POWER_CHAR_BLEUUID, std::bind(&Coyote::power_callback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
@@ -335,8 +344,8 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   }
 
   ESP_LOGI("coyote", "Found services and characteristics");
-  coyote_connected = true;
 
+  coyote_connected = true;
   coyote_batterylevel = batteryLevelCharacteristic->readValue<uint8_t>();
   ESP_LOGD("coyote", "Battery level: %u", coyote_batterylevel);
 
@@ -376,6 +385,7 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   xTimerStart(coyoteTimer, 0);
 
   ESP_LOGI("coyote", "coyote connected");
+  connection_fully_established = true;
   notify(C_CONNECTED);
   return true;
 }
