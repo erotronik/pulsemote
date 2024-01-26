@@ -90,7 +90,9 @@ void update_display_if_needed() {
     return;
   }
 
-  if (!need_display_update) return;
+  if (!need_display_update)
+    return;
+
   need_display_update = false;
   need_display_timer_update = false;
 
@@ -110,6 +112,8 @@ void update_display_if_needed() {
     lcd.setFont(NULL);
     return;
   }
+
+  ESP_LOGD("main", "Update display task - %s on %d", pcTaskGetName(xTaskGetCurrentTaskHandle()), xPortGetCoreID());
 
   bc = blockunsel;
   if (select_state == STATE_A)
@@ -295,6 +299,8 @@ void handle_random_mode() {
 }
 
 void coyote_change_handler(coyote_type_of_change t) {
+  ESP_LOGD("main", "coyote change handler task called from %s on %d", pcTaskGetName(xTaskGetCurrentTaskHandle()), xPortGetCoreID());
+
   last_change = t;
   if ( t == C_CONNECTED ) {
     update_display(true);
@@ -320,7 +326,7 @@ void handle_buttons() {
       if (mode_now >= modes.size()) {
         mode_now = 0;
       }
-      ESP_LOGD("main", "Set mode %d\n", mode_now);
+      ESP_LOGD("main", "Set mode %d", mode_now);
       if (mode_now == 1) {
         coyote_controller->chan_a()->put_setmode(M_BREATH);
         coyote_controller->chan_b()->put_setmode(M_BREATH);
@@ -382,11 +388,14 @@ void update_dials() {
 void main_loop() {
   M5.update();
 
-  if (have_angle8)
-    update_dials();
+  if (coyote_controller->get_isconnected()) {
+    if (have_angle8)
+      update_dials();
+
+    handle_buttons();
+    handle_random_mode();
+  }
   
-  handle_buttons();
-  handle_random_mode();
 
   //comms_uart_colorpicker();
   update_display_if_needed();
@@ -395,6 +404,8 @@ void main_loop() {
 
 void TaskMain(void *pvParameters) {
   vTaskDelay(200);
+  ESP_LOGD("main", "Main task started: %s on %d", pcTaskGetName(xTaskGetCurrentTaskHandle()), xPortGetCoreID());
+
   while (true)
     main_loop();
 }
@@ -411,11 +422,12 @@ void TaskScan(void *pvParameters) {
 void app_main() {
   auto cfg = M5.config();
   M5.begin(cfg);
+  M5.Ex_I2C.begin();
 
   // check if we have an angle8 controller attached
   if ( angle8.begin() ) {
     ESP_LOGI("main", "Found angle8");
-    ESP_LOGD("main", "Firmware version: %u\n", angle8.getVersion());
+    ESP_LOGD("main", "Firmware version: %u", angle8.getVersion());
     have_angle8 = true;
   }
 
@@ -430,7 +442,7 @@ void app_main() {
   coyote_controller = std::unique_ptr<Coyote>(new Coyote());
   coyote_controller->set_callback(coyote_change_handler);
 
-  xTaskCreate(TaskMain, "Main", 10000, nullptr, 1, nullptr);
+  xTaskCreatePinnedToCore(TaskMain, "Main", 10000, nullptr, 1, nullptr, 1);
   xTaskCreatePinnedToCore(TaskScan, "Scan", 10000, nullptr, 2, nullptr, 0);
   need_display_update = true;
 }

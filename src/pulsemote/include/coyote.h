@@ -12,15 +12,19 @@ class Coyote;
 // options respectively
 constexpr int coyote_max_power_percent = 50;
 
-enum coyote_mode { M_NONE, M_BREATH, M_WAVES };
-enum coyote_type_of_change { C_NONE, C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTING, C_CONNECTED };
-typedef std::function<void (coyote_type_of_change change)> coyote_callback;
-
 struct coyote_pattern {
     int pulse_length = 0; // 0-31 ms
     int pause_length = 0; // 0-1023 ms
     int amplitude = 0; // 0-31
 };
+
+enum coyote_mode { M_NONE, M_CUSTOM, M_BREATH, M_WAVES };
+enum coyote_type_of_change { C_NONE, C_POWER, C_WAVEMODE_A, C_WAVEMODE_B, C_DISCONNECTED, C_CONNECTING, C_CONNECTED };
+
+typedef std::function<void (coyote_type_of_change change)> coyote_callback;
+typedef std::function<coyote_pattern (uint32_t &waveclock, uint32_t &cyclecount)> coyote_mode_function;
+
+coyote_pattern coyote_mode_nothing(uint32_t &waveclock, uint32_t &cyclecount);
 
 class CoyoteChannel {
 public:
@@ -28,8 +32,9 @@ public:
     // change output power directly. Be careful with this.
     void put_power_pc(short);
     int get_power_pc() const;
-    coyote_mode get_mode() const { return wanted_mode; }
+    coyote_mode get_mode() const { return wavemode; }
     void put_setmode(coyote_mode);
+    void put_setmode(coyote_mode_function);
 
 private:
     friend class Coyote;
@@ -43,7 +48,8 @@ private:
     uint32_t cyclecount = 0;
     bool wavemode_changed = false;
     coyote_mode wavemode = M_NONE;
-    coyote_mode wanted_mode = M_NONE;
+    coyote_mode_function mode_function = coyote_mode_nothing;
+    coyote_mode_function wanted_mode_function = coyote_mode_nothing;
     unsigned short coyote_power;
     unsigned short coyote_power_wanted = start_power;
     coyote_pattern pattern;

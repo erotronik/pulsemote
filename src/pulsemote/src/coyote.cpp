@@ -66,6 +66,7 @@ int CoyoteChannel::get_power_pc() const {
 void CoyoteChannel::put_power_pc(short power_percent) {
   if (power_percent<0 || power_percent > 100)
     return;
+  
   coyote_power_wanted = (parent->coyote_maxPower * power_percent)/100;
 
   if (coyote_power_wanted > parent->coyote_maxPower) {
@@ -78,9 +79,31 @@ uint8_t Coyote::get_batterylevel() {
 }
 
 void CoyoteChannel::put_setmode(coyote_mode mode) {
-  wanted_mode = mode;
+  ESP_LOGD("coyote", "called put_setmode %d", mode);
+  wavemode = mode;
   wavemode_changed = true;
-  ESP_LOGD("coyote", "Set WaveMode %s %d\n", channel_name.c_str(), mode);
+
+  switch ( wavemode ) {
+    case M_BREATH:
+      wanted_mode_function = coyote_mode_breath;
+      break;
+    case M_WAVES:
+      wanted_mode_function = coyote_mode_waves;
+      break;
+    case M_NONE:
+    case M_CUSTOM:
+      wanted_mode_function = coyote_mode_nothing;
+      break;
+  }
+
+  ESP_LOGD("coyote", "Set WaveMode %s %d", channel_name.c_str(), mode);
+}
+
+void CoyoteChannel::put_setmode(coyote_mode_function f) {
+  ESP_LOGD("coyote", "called put_setmode function");
+  wavemode = M_CUSTOM;
+  wanted_mode_function = std::move(f);
+  wavemode_changed = true;
 }
 
 void Coyote::set_callback(coyote_callback c) {
@@ -139,25 +162,16 @@ void coyote_timer_callback(TimerHandle_t xTimerID) {
 }
 
 void CoyoteChannel::update_pattern() {
-  if ((wavemode == M_NONE || waveclock == 0) && (wanted_mode != wavemode)) {
-    wavemode = wanted_mode;
+  if ((wavemode == M_NONE || waveclock == 0) && (wavemode_changed)) {
+    wavemode_changed = false;
+    mode_function = std::move(wanted_mode_function);
     waveclock = 0;
     cyclecount = 0;
     parent->notify(C_WAVEMODE_A);
   }
 
-  if (coyote_power > 0 && wavemode != M_NONE) {
-    switch ( wavemode ) {
-      case M_BREATH:
-        pattern = coyote_mode_breath(waveclock, cyclecount);
-        break;
-      case M_WAVES:
-        pattern = coyote_mode_waves(waveclock, cyclecount);
-        break;
-      case M_NONE:
-        pattern = coyote_pattern{};
-        break;
-    }
+  if (coyote_power > 0 ) {
+    pattern = mode_function(waveclock, cyclecount);
   }
 }
 
@@ -171,7 +185,7 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
   if (channel_a->coyote_power != channel_a->coyote_power_wanted || channel_b->coyote_power != channel_b->coyote_power_wanted) {
     auto enc = encode_power(channel_a->coyote_power_wanted, channel_b->coyote_power_wanted);
     if (!powerCharacteristic->writeValue(enc))
-      ESP_LOGE("coyote", "Failed to write power %u %u %u\n", enc[0], enc[1], enc[2]);
+      ESP_LOGE("coyote", "Failed to write power %u %u %u", enc[0], enc[1], enc[2]);
   }
   // Do WaveA
   channel_a->update_pattern();
@@ -223,7 +237,7 @@ private:
 };
 
 bool Coyote::getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
-  ESP_LOGD("coyote", "Getting service %s\n", uuid.toString().c_str());
+  ESP_LOGD("coyote", "Getting service %s", uuid.toString().c_str());
   service = bleClient->getService(uuid);
   if (service == nullptr) {
     ESP_LOGE("coyote", "Failed to find service UUID: %s", uuid.toString().c_str());
@@ -233,7 +247,7 @@ bool Coyote::getService(NimBLERemoteService*& service, NimBLEUUID uuid) {
 }
 
 bool getCharacteristic(NimBLERemoteService* service, NimBLERemoteCharacteristic*& c, NimBLEUUID uuid, notify_callback notifyCallback = nullptr) {
-  ESP_LOGD("coyote", "Getting characteristic %s\n", uuid.toString().c_str());
+  ESP_LOGD("coyote", "Getting characteristic %s", uuid.toString().c_str());
   c = service->getCharacteristic(uuid);
   if (c == nullptr) {
     ESP_LOGE("coyote", "Failed to find characteristic UUID: %s", uuid.toString().c_str());
@@ -291,7 +305,7 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
 
   notify(C_CONNECTING);
 
-  ESP_LOGI("coyote", "Will try to connect to Coyote at %s\n", coyote_device->getAddress().toString().c_str());
+  ESP_LOGI("coyote", "Will try to connect to Coyote at %s", coyote_device->getAddress().toString().c_str());
   if (!bleClient->connect(coyote_device)) {
     ESP_LOGE("coyote", "Connection failed");
     return false;
@@ -324,23 +338,23 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   coyote_connected = true;
 
   coyote_batterylevel = batteryLevelCharacteristic->readValue<uint8_t>();
-  ESP_LOGD("coyote", "Battery level: %u\n", coyote_batterylevel);
+  ESP_LOGD("coyote", "Battery level: %u", coyote_batterylevel);
 
   auto configData = configCharacteristic->readValue();
   coyote_maxPower = (configData[2] & 0xf) * 256 + configData[1];
-  ESP_LOGD("coyote", "coyote maxPower: %d\n", coyote_maxPower);
+  ESP_LOGD("coyote", "coyote maxPower: %d", coyote_maxPower);
   coyote_maxPower *= (double)coyote_max_power_percent/100;
-  ESP_LOGD("coyote", "coyote maxPower clamped to: %d\n", coyote_maxPower);
+  ESP_LOGD("coyote", "coyote maxPower clamped to: %d", coyote_maxPower);
   coyote_powerStep = configData[0];
-  ESP_LOGD("coyote", "coyote powerStep: %d\n", coyote_powerStep);
+  ESP_LOGD("coyote", "coyote powerStep: %d", coyote_powerStep);
 
   auto powerData = powerCharacteristic->readValue();
   if (powerData.size() >= 3)
     parse_power({powerData.begin(), powerData.end()});
 
-  ESP_LOGD("coyote", "read pattern a\n");
+  ESP_LOGD("coyote", "read pattern a");
   auto patternAData = patternACharacteristic->readValue();
-  ESP_LOGD("coyote", "read pattern b\n");
+  ESP_LOGD("coyote", "read pattern b");
   auto patternBData = patternBCharacteristic->readValue();
   if (patternAData.size() < 3 || patternBData.size() < 3) {
     ESP_LOGE("coyote", "No pattern data?");

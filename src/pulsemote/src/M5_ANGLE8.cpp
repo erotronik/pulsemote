@@ -33,10 +33,11 @@ Modifications licensed under project Apache2 license.
 /*! @brief Initialize the ANGLE8.
     @return True if the init was successful, otherwise false.. */
 bool M5_ANGLE8::begin() {
-    bool res = true;
-    res |= _i2c->start(_addr, false, _freq);
-    res |= _i2c->stop();
-    return res;
+    auto ad = readRegister8(ANGLE8_ADDRESS_REG);
+    ESP_LOGD("m5angle8", "Read address %u", ad.value_or(0));
+    if ( ad.has_value() && (ad.value_or(0) == _addr) )
+        return true;
+    return false;
 }
 
 /*! @brief Write a certain length of data to the specified register address.
