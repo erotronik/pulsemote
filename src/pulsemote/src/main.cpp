@@ -23,9 +23,11 @@ coyote_type_of_change last_change = C_NONE;
 M5_ANGLE8 angle8;
 bool have_angle8 = false;
 
+#ifndef ARDUINO_BUILD
 uint32_t millis() {
   return esp_timer_get_time()/1000;
 }
+#endif
 
 int random_range(int min, int max){
     int n = max - min + 1;
@@ -426,7 +428,11 @@ void TaskScan(void *pvParameters) {
     return;
 } */
 
+#ifndef ARDUINO_BUILD
 void app_main() {
+#else
+void setup() {
+#endif
   auto cfg = M5.config();
   M5.begin(cfg);
   M5.Ex_I2C.begin();

@@ -15,7 +15,11 @@ int scanTime = 5 * 1000; // In ms
 NimBLEAdvertisedDevice* coyote_device = nullptr;
 extern std::unique_ptr<Coyote> coyote_controller;
 
+#ifndef ARDUINO_BUILD
 class PulsemoteAdvertisedDeviceCallbacks: public NimBLEScanCallbacks {
+#else
+class PulsemoteAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+#endif
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
       ESP_LOGD("comms", "Advertised Device: %s", advertisedDevice->toString().c_str());
       if (Coyote::is_coyote(advertisedDevice)) {
@@ -30,7 +34,11 @@ void comms_init(short myid) {
   NimBLEDevice::init("x");
   NimBLEDevice::setPower(ESP_PWR_LVL_P6, ESP_BLE_PWR_TYPE_ADV); // send advertisements with 6 dbm
   pBLEScan = NimBLEDevice::getScan(); // create new scan
+#ifndef ARDUINO_BUILD
   pBLEScan->setScanCallbacks(new PulsemoteAdvertisedDeviceCallbacks());
+#else
+  pBLEScan->setAdvertisedDeviceCallbacks(new PulsemoteAdvertisedDeviceCallbacks());
+#endif
   pBLEScan->setActiveScan(true); // active scan uses more power, but get results faster
   pBLEScan->setInterval(250);
   pBLEScan->setWindow(125);  // less or equal setInterval value

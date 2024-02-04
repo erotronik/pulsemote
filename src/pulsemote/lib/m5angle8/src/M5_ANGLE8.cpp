@@ -157,6 +157,6 @@ uint8_t M5_ANGLE8::getDialPercent(uint8_t ch, bool reverse) {
 
     if (reverse)
         percent = 1-percent;
-    
+
     return percent*100;
 }

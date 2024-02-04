@@ -3,6 +3,7 @@
 #define start_power 0 // max is usually 2000
 
 #include <memory>
+#include <functional>
 #include <NimBLEDevice.h>
 
 class CoyoteNimBLEClientCallback;

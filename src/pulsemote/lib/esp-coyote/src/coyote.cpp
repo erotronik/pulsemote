@@ -227,6 +227,12 @@ public:
     coyote_instance->connected_callback();
   }
 
+  // arduino
+  void onDisconnect(NimBLEClient* pclient) {
+    coyote_instance->disconnected_callback(0);
+  }
+
+  // esp-idf
   void onDisconnect(NimBLEClient* pclient, int reason) {
     coyote_instance->disconnected_callback(reason);
   }
