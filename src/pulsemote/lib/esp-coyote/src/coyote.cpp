@@ -6,7 +6,7 @@
 #include <functional>
 #include <NimBLEDevice.h>
 
-#include "coyote.h"
+#include "coyote.hpp"
 #include "coyote-modes.h"
 #include <esp_log.h>
 #include <map>
@@ -30,7 +30,7 @@ NimBLEUUID BATTERY_CHAR_BLEUUID(BATTERY_CHAR_UUID, 16, false);
 
 std::map<TimerHandle_t, Coyote*> coyote_timer_map;
 
-CoyoteChannel::CoyoteChannel(Coyote* c, std::string name) : parent(c), channel_name(name) {}
+CoyoteChannel::CoyoteChannel(Coyote& c, std::string name) : parent(c), channel_name(name) {}
 
 bool Coyote::is_coyote(NimBLEAdvertisedDevice* advertisedDevice) {
   auto ble_manufacturer_specific_data = advertisedDevice->getManufacturerData();
@@ -47,9 +47,10 @@ bool Coyote::get_isconnected() {
 
 // go up or down in steps of 1%, but never above 70% of max
 void CoyoteChannel::put_power_diff(short change) {
+    ESP_LOGD("coyote", "called put_power_diff %d", change);
   if (change > 5) return;  // max 5% in one go, sanity check
-  int pc = (parent->coyote_maxPower / 100);
-  int max = parent->coyote_maxPower;
+  int pc = (parent.coyote_maxPower / 100);
+  int max = parent.coyote_maxPower;
   if (change < 0 && coyote_power_wanted < -change * pc)
     return;
   coyote_power_wanted += change * pc;
@@ -59,18 +60,19 @@ void CoyoteChannel::put_power_diff(short change) {
 }
 
 int CoyoteChannel::get_power_pc() const {
-  return int((coyote_power * 100 / parent->coyote_maxPower));
+  return int((coyote_power * 100 / parent.coyote_maxPower));
 }
 
 // go to a specific percentage. Be careful about this...
 void CoyoteChannel::put_power_pc(short power_percent) {
+  ESP_LOGD("coyote", "called put_power_pc %d", power_percent);
   if (power_percent<0 || power_percent > 100)
     return;
   
-  coyote_power_wanted = (parent->coyote_maxPower * power_percent)/100;
+  coyote_power_wanted = (parent.coyote_maxPower * power_percent)/100;
 
-  if (coyote_power_wanted > parent->coyote_maxPower) {
-    coyote_power_wanted = parent->coyote_maxPower;
+  if (coyote_power_wanted > parent.coyote_maxPower) {
+    coyote_power_wanted = parent.coyote_maxPower;
   }
 }
 
@@ -117,9 +119,9 @@ void Coyote::notify (coyote_type_of_change change) {
 
 void Coyote::parse_power(const std::vector<uint8_t> buf) {
   // notify/write: 3 bytes: flipFirstAndThirdByte(zero(2) ~ uint(11).as("powerLevelB") ~uint(11).as("powerLevelA")
-  channel_a->coyote_power = (buf[2] * 256 + buf[1]) >> 3;
-  channel_b->coyote_power = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
-  ESP_LOGD("coyote", "coyote power A=%d (%d%%) B=%d (%d%%)", channel_a->coyote_power, int(channel_a->coyote_power * 100 / coyote_maxPower), channel_b->coyote_power, int(channel_b->coyote_power * 100 / coyote_maxPower));
+  channel_a.coyote_power = (buf[2] * 256 + buf[1]) >> 3;
+  channel_b.coyote_power = (buf[1] * 256 + buf[0]) & 0b0000011111111111;
+  ESP_LOGD("coyote", "coyote power A=%d (%d%%) B=%d (%d%%)", channel_a.coyote_power, int(channel_a.coyote_power * 100 / coyote_maxPower), channel_b.coyote_power, int(channel_b.coyote_power * 100 / coyote_maxPower));
 }
 
 std::vector<uint8_t> Coyote::encode_power(int xpowerA, int xpowerB) {
@@ -167,7 +169,7 @@ void CoyoteChannel::update_pattern() {
     mode_function = wanted_mode_function;
     waveclock = 0;
     cyclecount = 0;
-    parent->notify(C_WAVEMODE_A);
+    parent.notify(C_WAVEMODE_A);
   }
 
   if (coyote_power > 0 ) {
@@ -182,23 +184,23 @@ void Coyote::timer_callback(TimerHandle_t xTimerID) {
     return;
 
   // this sets the power to where we want it (also stop you changing it on the rocker switches)
-  if (channel_a->coyote_power != channel_a->coyote_power_wanted || channel_b->coyote_power != channel_b->coyote_power_wanted) {
-    auto enc = encode_power(channel_a->coyote_power_wanted, channel_b->coyote_power_wanted);
+  if (channel_a.coyote_power != channel_a.coyote_power_wanted || channel_b.coyote_power != channel_b.coyote_power_wanted) {
+    auto enc = encode_power(channel_a.coyote_power_wanted, channel_b.coyote_power_wanted);
     if (!powerCharacteristic->writeValue(enc))
       ESP_LOGE("coyote", "Failed to write power %u %u %u", enc[0], enc[1], enc[2]);
   }
   // Do WaveA
-  channel_a->update_pattern();
-  if ( channel_a->coyote_power > 0 && channel_a->wavemode != M_NONE ) {
-    auto enc = encode_pattern(channel_a->pattern);
+  channel_a.update_pattern();
+  if ( channel_a.coyote_power > 0 && channel_a.wavemode != M_NONE ) {
+    auto enc = encode_pattern(channel_a.pattern);
     if (!patternACharacteristic->writeValue(enc))
       ESP_LOGE("coyote", "Failed to write pattern A");
   }
 
   // Do WaveB
-  channel_b->update_pattern();
-  if ( channel_b->coyote_power > 0 && channel_b->wavemode != M_NONE ) {
-    auto enc = encode_pattern(channel_b->pattern);
+  channel_b.update_pattern();
+  if ( channel_b.coyote_power > 0 && channel_b.wavemode != M_NONE ) {
+    auto enc = encode_pattern(channel_b.pattern);
     if (!patternBCharacteristic->writeValue(enc))
       ESP_LOGE("coyote", "Failed to write pattern B");
   }
@@ -277,9 +279,7 @@ void Coyote::power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size
     ESP_LOGE("coyote", "Power callback with incorrect length");
 }
 
-Coyote::Coyote() {
-  channel_a = std::unique_ptr<CoyoteChannel>(new CoyoteChannel(this, "a"));
-  channel_b = std::unique_ptr<CoyoteChannel>(new CoyoteChannel(this, "b"));
+Coyote::Coyote() : channel_a(*this, "a"), channel_b(*this, "b") {
 }
 
 Coyote::~Coyote() {
@@ -368,15 +368,15 @@ bool Coyote::connect_to_device(NimBLEAdvertisedDevice* coyote_device) {
   if (patternAData.size() < 3 || patternBData.size() < 3) {
     ESP_LOGE("coyote", "No pattern data?");
   }
-  channel_a->pattern = parse_pattern({patternAData.begin(), patternAData.end()});
-  channel_b->pattern = parse_pattern({patternBData.begin(), patternBData.end()});
+  channel_a.pattern = parse_pattern({patternAData.begin(), patternAData.end()});
+  channel_b.pattern = parse_pattern({patternBData.begin(), patternBData.end()});
 
   auto buf = encode_power(start_power, start_power);
   if (!powerCharacteristic->writeValue(buf))
     ESP_LOGE("coyote", "Failed to write powerCharacteristic");
 
-  channel_a->wavemode = M_NONE;
-  channel_b->wavemode = M_NONE;
+  channel_a.wavemode = M_NONE;
+  channel_b.wavemode = M_NONE;
 
   if (!coyoteTimer) {
     coyoteTimer = xTimerCreate(nullptr, pdMS_TO_TICKS(100), true, nullptr, coyote_timer_callback);

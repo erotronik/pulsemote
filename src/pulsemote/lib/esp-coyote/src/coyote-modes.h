@@ -1,7 +1,9 @@
 
 // https://github.com/OpenDGLab/OpenDGLab-Connect/blob/master/src/services/DGLab.js
 
-#include "coyote.h"
+#pragma once
+
+#include "coyote.hpp"
 #include <math.h>
 #include <cmath>
 

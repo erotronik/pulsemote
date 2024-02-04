@@ -35,14 +35,15 @@ public:
     coyote_mode get_mode() const { return wavemode; }
     void put_setmode(coyote_mode);
     void put_setmode(coyote_mode_function);
+    std::string get_name() const { return channel_name; }
 
 private:
     friend class Coyote;
 
-    CoyoteChannel(Coyote* coyote, std::string name);
+    CoyoteChannel(Coyote& coyote, std::string name);
     void update_pattern();
 
-    Coyote* parent;
+    Coyote& parent;
 
     uint32_t waveclock = 0;
     uint32_t cyclecount = 0;
@@ -61,8 +62,8 @@ public:
     Coyote();
     ~Coyote();
 
-    CoyoteChannel* chan_a() { return channel_a.get(); }
-    CoyoteChannel* chan_b() { return channel_b.get(); }
+    CoyoteChannel& chan_a() { return channel_a; }
+    CoyoteChannel& chan_b() { return channel_b; }
 
     bool get_isconnected();
     bool connect_to_device(NimBLEAdvertisedDevice* coyote_device);
@@ -78,8 +79,8 @@ private:
     friend class CoyoteNimBLEClientCallback;
     friend class CoyoteChannel;
 
-    std::unique_ptr<CoyoteChannel> channel_a;
-    std::unique_ptr<CoyoteChannel> channel_b;
+    CoyoteChannel channel_a;
+    CoyoteChannel channel_b;
 
     void batterylevel_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify);
     void power_callback(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t length, bool isNotify);

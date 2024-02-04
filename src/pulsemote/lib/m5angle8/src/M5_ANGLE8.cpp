@@ -28,7 +28,7 @@ SOFTWARE.
 Modifications licensed under project Apache2 license.
 */
 
-#include "M5_ANGLE8.h"
+#include "M5_ANGLE8.hpp"
 
 /*! @brief Initialize the ANGLE8.
     @return True if the init was successful, otherwise false.. */

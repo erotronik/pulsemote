@@ -1,4 +1,4 @@
-#include "coyote.h"
+#include "coyote.hpp"
 
 #include <NimBLEDevice.h>
 #include <memory>
