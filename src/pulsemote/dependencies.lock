@@ -1,0 +1,11 @@
+dependencies:
+  esp-nimble-cpp:
+    component_hash: 27780fd83c3c3ccdbd0221a2c2e8fb01b5fd6e09b9f767a16b7e0abba89d4802
+    source:
+      git: https://github.com/h2zero/esp-nimble-cpp.git
+      path: .
+      type: git
+    version: 22fb1ab8017ebe152e48e30759ab2f8bf27608db
+manifest_hash: 14e18c67dbeb3879f64a1e852b2d50798c0f0d2f2ddb2fb1dd804b3374562f4a
+target: esp32
+version: 1.0.0
