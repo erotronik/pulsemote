@@ -1,0 +1,15 @@
+{
+    "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+    "name": "CoyoStim",
+    "version": "0.0.1",
+    "license": "Apache-2.0",
+    "frameworks": [
+        "espidf",
+        "arduino"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/erotronik/coyostim.git"
+    },
+    "description": "A library to control eStim boxes like the DG-Labs 2.0 with ESP32 based controllers."
+}

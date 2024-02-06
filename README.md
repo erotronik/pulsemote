@@ -11,10 +11,7 @@ to make your own hardware.
 
 ## Notes
 
-* This is a fork of the project at https://github.com/erotronik/pulsemote.
-This fork adds support for the M5Stack Core2, as well as an additional pattern.
-
-* The current code is for [PlatformIO](https://platformio.org/) and a M5Stack
+* This project uses [PlatformIO](https://platformio.org/) and a M5Stack
 Core or Core2 controller. But it should be possible to alter it
 for anything based on an ESP-32 with a display and at least 3 buttons.
 
@@ -33,7 +30,7 @@ More in the future.
 * After turning on the box it will scan for a DG-Labs device that is turned on and not connected to anything else
 * Use the left button to change what you want to update (either the level of output A, level of output B, or the mode), it will be highlighted with a different colour
 * Use the other buttons to alter what is highlighted, either the levels of A or B (in percentage) or the mode (between 'off', 'on', or a mode which turns on and off at a random interval)
-* For safety when holding the + button it will repeat but only up to 10% then you need to push and hold again (or rapid tap).  The maximum output is capped at 70% but that's a level in the code that can be changed.
+* For safety when holding the + button it will repeat but only up to 10% then you need to push and hold again (or rapid tap).  The maximum output is capped at 50% but that's a level in the code that can be changed.
 
 ## Requirements
 
